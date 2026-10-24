@@ -10,9 +10,13 @@ export type MediaItem = {
   width: number | null;
   height: number | null;
   thumbnail: string | null;
+  /** URL direta da mídia na CDN do Instagram (stories): baixada sem passar pelo servidor. */
+  src?: string;
 };
 
 export type PostInfo = {
+  /** Stories vêm da sessão do usuário no celular, não do servidor. */
+  kind?: 'story';
   url: string;
   id: string;
   title: string;

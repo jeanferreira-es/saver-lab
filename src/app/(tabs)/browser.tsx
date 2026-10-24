@@ -5,11 +5,12 @@ import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } fro
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 
+import { InstagramBridge, type InstagramBridgeHandle } from '@/components/instagram-bridge';
 import { SelectItemsModal } from '@/components/select-items-modal';
 import { extractInstagramUrl, fetchInfo, type MediaItem, type PostInfo } from '@/lib/api';
 import { entryKey, startDownload, useDownloadStates } from '@/lib/downloader';
 import { getEntry, useHistory } from '@/lib/history';
-import { INSTAGRAM_HOME, OBSERVER_SCRIPT, parseWebMessage } from '@/lib/instagram-web';
+import { INSTAGRAM_HOME, OBSERVER_SCRIPT, parseStoryUrl, parseWebMessage, type StoryTarget } from '@/lib/instagram-web';
 import { recordPost } from '@/lib/profiles';
 import { captureSession, getSession, loginAvailable } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
@@ -20,12 +21,15 @@ export default function BrowserScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const webview = useRef<WebView<object>>(null);
+  const bridge = useRef<InstagramBridgeHandle>(null);
   const history = useHistory();
   const downloads = useDownloadStates();
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Post aberto na WebView no momento (detectado pela URL).
+  // Post (ou conjunto de stories) aberto na WebView no momento (detectado pela URL).
   const [current, setCurrent] = useState<string | null>(null);
+  // Story exibido agora: muda sozinho conforme os stories avançam.
+  const [storyMedia, setStoryMedia] = useState<string | null>(null);
   const [grab, setGrab] = useState<Grab | null>(null);
   const [selecting, setSelecting] = useState(false);
 
@@ -41,10 +45,22 @@ export default function BrowserScreen() {
     }, [canGoBack]),
   );
 
+  /** Link de post/reel ou, para stories, a URL do conjunto (sem o id do story). */
+  function linkFrom(text: string) {
+    return extractInstagramUrl(text) ?? parseStoryUrl(text)?.url ?? null;
+  }
+
   function onUrl(url: string) {
-    const post = extractInstagramUrl(url);
-    setCurrent(post);
-    if (post !== grab?.url) setGrab(null);
+    const link = linkFrom(url);
+    setCurrent(link);
+    setStoryMedia(parseStoryUrl(url)?.mediaId ?? null);
+    // Com a escolha aberta, o story continua rodando atrás: não descarta o que foi buscado.
+    if (link !== grab?.url && !selecting) setGrab(null);
+  }
+
+  function fetchStories(story: StoryTarget) {
+    if (!bridge.current) return Promise.reject(new Error('Instagram ainda carregando, tente de novo.'));
+    return bridge.current.fetchStories(story);
   }
 
   function onNavigation(nav: WebViewNavigation) {
@@ -54,12 +70,14 @@ export default function BrowserScreen() {
     if (loginAvailable && !getSession()) captureSession().catch(() => {});
   }
 
-  /** Busca o post e baixa: mídia única vai direto; carrossel abre a escolha. */
+  /** Busca o post e baixa: mídia única vai direto; carrossel ou vários stories abrem a escolha. */
   async function download(url: string) {
     setGrab({ url, status: 'loading' });
     try {
-      const post = await fetchInfo(url);
-      recordPost(post);
+      // Stories só existem com a sessão do usuário: são buscados pelo celular, não pelo servidor.
+      const story = parseStoryUrl(url);
+      const post = story ? await fetchStories(story) : await fetchInfo(url);
+      if (!story) recordPost(post);
       setGrab({ url, status: 'ready', post });
       const [first] = post.items;
       if (post.items.length > 1) setSelecting(true);
@@ -78,13 +96,15 @@ export default function BrowserScreen() {
   const downloaded = new Set(
     post ? post.items.filter((i) => history.some((h) => h.key === entryKey(post, i))).map((i) => i.index) : [],
   );
+  // Na escolha de stories, já vem marcado só o que está na tela.
+  const currentStory = post?.kind === 'story' ? post.items.find((i) => i.id === storyMedia) : undefined;
   const active = post?.items.map((i) => downloads[entryKey(post, i)]).filter((s) => s?.status === 'downloading') ?? [];
   const progress = active.length
     ? active.reduce((sum, s) => sum + (s?.status === 'downloading' && s.totalBytes ? s.bytesWritten / s.totalBytes : 0), 0) /
       active.length
     : null;
 
-  let label = 'Baixar este post';
+  let label = parseStoryUrl(target) ? 'Baixar story' : 'Baixar este post';
   let icon: 'download-outline' | 'checkmark-circle' | 'alert-circle' | 'checkbox-outline' = 'download-outline';
   if (grab?.status === 'loading') label = 'Buscando…';
   else if (grab?.status === 'error') {
@@ -124,7 +144,7 @@ export default function BrowserScreen() {
           if (msg?.type === 'url') onUrl(msg.value);
           // "Copiar link" dentro do site: baixa na hora, sem passar pela área de transferência.
           if (msg?.type === 'copy') {
-            const url = extractInstagramUrl(msg.value);
+            const url = linkFrom(msg.value);
             if (url) download(url);
           }
         }}
@@ -158,11 +178,14 @@ export default function BrowserScreen() {
         </Pressable>
       ) : null}
 
+      <InstagramBridge ref={bridge} />
+
       {post ? (
         <SelectItemsModal
           visible={selecting}
           items={post.items}
           downloaded={downloaded}
+          preselect={currentStory ? [currentStory.index] : undefined}
           onClose={() => setSelecting(false)}
           onConfirm={downloadSelected}
         />

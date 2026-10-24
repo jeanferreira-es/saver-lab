@@ -15,6 +15,8 @@ function downloadsDir() {
 }
 
 export function entryKey(post: PostInfo, item: MediaItem) {
+  // A posição de um story muda quando os mais antigos expiram; o id não.
+  if (post.kind === 'story') return `story-${item.id}`;
   return `${post.id}-${item.index}`;
 }
 
@@ -81,7 +83,7 @@ async function downloadItem(
   const destination = new File(downloadsDir(), `${key}.${item.ext || 'mp4'}`);
   if (destination.exists) destination.delete();
 
-  const task = new DownloadTask(await downloadUrl(post.url, item), destination, {
+  const task = new DownloadTask(item.src ?? (await downloadUrl(post.url, item)), destination, {
     deferBackgroundSessionCompletion: true,
     onProgress: ({ bytesWritten, totalBytes }) => onProgress?.(bytesWritten, totalBytes > 0 ? totalBytes : null),
   });

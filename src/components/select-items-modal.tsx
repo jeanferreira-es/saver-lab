@@ -17,11 +17,13 @@ type Props = {
   items: MediaItem[];
   /** Índices já baixados — começam desmarcados e com selo. */
   downloaded: Set<number>;
+  /** Índices marcados ao abrir. Sem isso, marca tudo que ainda não foi baixado. */
+  preselect?: number[];
   onClose: () => void;
   onConfirm: (items: MediaItem[]) => void;
 };
 
-export function SelectItemsModal({ visible, items, downloaded, onClose, onConfirm }: Props) {
+export function SelectItemsModal({ visible, items, downloaded, preselect, onClose, onConfirm }: Props) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -51,8 +53,10 @@ export function SelectItemsModal({ visible, items, downloaded, onClose, onConfir
       onRequestClose={onClose}
       statusBarTranslucent
       navigationBarTranslucent
-      // Ao abrir, pré-seleciona o que ainda não foi baixado.
-      onShow={() => setSelected(new Set(items.filter((i) => !downloaded.has(i.index)).map((i) => i.index)))}
+      // Ao abrir, pré-seleciona o pedido ou, por padrão, o que ainda não foi baixado.
+      onShow={() =>
+        setSelected(new Set(preselect ?? items.filter((i) => !downloaded.has(i.index)).map((i) => i.index)))
+      }
     >
       {/* No iOS o pageSheet já fica abaixo da status bar; no Android o modal é tela cheia. */}
       <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: Platform.OS === 'android' ? insets.top : 0 }}>
