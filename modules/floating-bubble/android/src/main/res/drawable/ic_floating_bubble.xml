@@ -1,0 +1,22 @@
+<!-- Símbolo do app (assets/brand/logo-mark.svg) como vetor Android. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="1024"
+  android:viewportHeight="1024">
+  <path
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="56"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round"
+    android:pathData="M404,323 H620 A104,104 0 0 1 724,427 V597 A104,104 0 0 1 620,701 H404 A104,104 0 0 1 300,597 V427 A104,104 0 0 1 404,323 Z" />
+  <path
+    android:strokeColor="#FFFFFFFF"
+    android:strokeWidth="56"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round"
+    android:pathData="M512,423 V611 M436,537 L512,613 L588,537" />
+  <path
+    android:fillColor="#FFFFFFFF"
+    android:pathData="M598,417 A32,32 0 1,0 662,417 A32,32 0 1,0 598,417 Z" />
+</vector>
