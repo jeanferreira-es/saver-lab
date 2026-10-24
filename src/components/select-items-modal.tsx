@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { FlatList, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
@@ -49,10 +49,13 @@ export function SelectItemsModal({ visible, items, downloaded, onClose, onConfir
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
       // Ao abrir, pré-seleciona o que ainda não foi baixado.
       onShow={() => setSelected(new Set(items.filter((i) => !downloaded.has(i.index)).map((i) => i.index)))}
     >
-      <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* No iOS o pageSheet já fica abaixo da status bar; no Android o modal é tela cheia. */}
+      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: Platform.OS === 'android' ? insets.top : 0 }}>
         <View style={[styles.header, { borderColor: t.border }]}>
           <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Fechar">
             <Ionicons name="close" size={24} color={t.text} />

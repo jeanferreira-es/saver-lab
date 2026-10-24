@@ -111,27 +111,6 @@ export default function BrowserScreen() {
 
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: t.bg }}>
-      <View style={[styles.toolbar, { borderColor: t.border }]}>
-        <Pressable
-          onPress={() => webview.current?.goBack()}
-          disabled={!canGoBack}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Voltar"
-        >
-          <Ionicons name="chevron-back" size={24} color={canGoBack ? t.text : t.border} />
-        </Pressable>
-        <Text style={[styles.title, { color: t.text }]}>Instagram</Text>
-        <Pressable
-          onPress={() => webview.current?.reload()}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Recarregar"
-        >
-          <Ionicons name="refresh" size={22} color={t.text} />
-        </Pressable>
-      </View>
-
       <WebView
         ref={webview}
         source={{ uri: INSTAGRAM_HOME }}
@@ -193,15 +172,6 @@ export default function BrowserScreen() {
 }
 
 const styles = StyleSheet.create({
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  title: { fontSize: 16, fontWeight: '700' },
   center: { alignItems: 'center', justifyContent: 'center' },
   pill: {
     position: 'absolute',

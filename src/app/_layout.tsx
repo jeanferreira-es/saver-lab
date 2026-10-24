@@ -6,7 +6,8 @@ import { syncBubble } from '@/lib/bubble';
 import { loadHistory } from '@/lib/history';
 import { loadProfiles } from '@/lib/profiles';
 import { loadSession } from '@/lib/session';
-import { useTheme } from '@/lib/theme';
+import { getSettings } from '@/lib/settings';
+import { applyThemePreference, useTheme } from '@/lib/theme';
 
 export default function RootLayout() {
   const t = useTheme();
@@ -16,6 +17,7 @@ export default function RootLayout() {
     loadProfiles();
     loadSession();
     syncBubble();
+    getSettings().then((s) => applyThemePreference(s.theme));
   }, []);
 
   return (

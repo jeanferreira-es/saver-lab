@@ -1,4 +1,6 @@
-import { useColorScheme } from 'react-native';
+import { Appearance, useColorScheme } from 'react-native';
+
+import type { ThemePreference } from '@/lib/settings';
 
 const light = {
   bg: '#F6F5F2',
@@ -25,6 +27,11 @@ const dark: typeof light = {
 };
 
 export type Theme = typeof light;
+
+/** Força claro/escuro no app inteiro (inclusive componentes nativos) ou volta a seguir o sistema. */
+export function applyThemePreference(pref: ThemePreference) {
+  Appearance.setColorScheme(pref === 'system' ? 'unspecified' : pref);
+}
 
 export function useTheme(): Theme {
   return useColorScheme() === 'dark' ? dark : light;
