@@ -9,9 +9,11 @@ import {
   parseStories,
   parseWebMessage,
   profileFetchScript,
+  RATE_LIMITED,
   storiesFetchScript,
   type StoryTarget,
 } from '@/lib/instagram-web';
+import { getUserId, rememberUserIds } from '@/lib/user-ids';
 
 export type InstagramBridgeHandle = {
   /** Busca o perfil pelo celular, com a sessão do usuário (sem passar pelo servidor). */
@@ -21,6 +23,22 @@ export type InstagramBridgeHandle = {
 };
 
 const TIMEOUT_MS = 20_000;
+
+/** Guarda o par usuário → id de um objeto `user` da resposta, se houver. */
+function rememberUser(user: { username?: string; id?: string | number; pk?: string | number } | undefined) {
+  const id = user?.pk ?? user?.id;
+  if (user?.username && id != null) rememberUserIds({ [user.username]: String(id) });
+}
+
+/** Motivo que o Instagram manda no corpo do erro (ex.: "login_required"), se houver. */
+function igMessage(body: string) {
+  try {
+    const { message } = JSON.parse(body) as { message?: string };
+    return message ? `: ${message}` : '';
+  } catch {
+    return '';
+  }
+}
 
 type Response = { status: number; body: string };
 type Pending = { resolve: (r: Response) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> };
@@ -55,16 +73,28 @@ export const InstagramBridge = forwardRef<InstagramBridgeHandle>(function Instag
       const { status, body } = await request((id) => profileFetchScript(id, username));
       console.log('[bridge] perfil pelo celular: HTTP', status);
       if (status === 404) throw new Error('Perfil não encontrado.');
+      if (status === 429) throw new Error(RATE_LIMITED);
+      try {
+        rememberUser(JSON.parse(body)?.data?.user);
+      } catch {}
       const profile = status === 200 ? parseProfile(body) : null;
       if (!profile) throw new Error(`O Instagram recusou a consulta pelo celular (HTTP ${status}).`);
       return profile;
     },
     async fetchStories(target) {
-      const { status, body } = await request((id) => storiesFetchScript(id, target.reel));
-      console.log('[bridge] stories pelo celular: HTTP', status);
-      if (status !== 200) throw new Error(`O Instagram recusou a consulta dos stories (HTTP ${status}).`);
+      const known = 'username' in target.reel ? await getUserId(target.reel.username) : null;
+      const { status, body } = await request((id) => storiesFetchScript(id, target.reel, known));
+      console.log('[bridge] stories pelo celular: HTTP', status, known ? '(id já conhecido)' : '', body.slice(0, 500));
+      if (status === 429) throw new Error(RATE_LIMITED);
+      if (status !== 200) {
+        throw new Error(`O Instagram recusou a consulta dos stories (HTTP ${status}${igMessage(body)}).`);
+      }
       const post = parseStories(body, target);
       if (!post) throw new Error('Nenhum story disponível — eles expiram em 24 horas.');
+      try {
+        const json = JSON.parse(body);
+        rememberUser((json?.reels_media?.[0] ?? Object.values(json?.reels ?? {})[0])?.user);
+      } catch {}
       return post;
     },
   }));

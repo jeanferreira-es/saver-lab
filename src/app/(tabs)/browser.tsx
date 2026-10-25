@@ -14,6 +14,8 @@ import { INSTAGRAM_HOME, OBSERVER_SCRIPT, parseStoryUrl, parseWebMessage, type S
 import { recordPost } from '@/lib/profiles';
 import { captureSession, getSession, loginAvailable } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
+import { cachedStories, rememberReel } from '@/lib/story-cache';
+import { rememberUserIds } from '@/lib/user-ids';
 
 type Grab = { url: string; status: 'loading' | 'ready' | 'error'; post?: PostInfo; message?: string };
 
@@ -59,6 +61,12 @@ export default function BrowserScreen() {
   }
 
   function fetchStories(story: StoryTarget) {
+    // O story na tela já veio nos dados do site: baixa direto, sem nova consulta ao Instagram.
+    const cached = cachedStories(story);
+    if (cached) {
+      console.log('[stories] usando os dados que o site já carregou', story.url);
+      return Promise.resolve(cached);
+    }
     if (!bridge.current) return Promise.reject(new Error('Instagram ainda carregando, tente de novo.'));
     return bridge.current.fetchStories(story);
   }
@@ -76,7 +84,8 @@ export default function BrowserScreen() {
     try {
       // Stories só existem com a sessão do usuário: são buscados pelo celular, não pelo servidor.
       const story = parseStoryUrl(url);
-      const post = story ? await fetchStories(story) : await fetchInfo(url);
+      // A URL guardada é a do conjunto; o story aberto vem da URL atual.
+      const post = story ? await fetchStories({ ...story, mediaId: story.mediaId ?? storyMedia }) : await fetchInfo(url);
       if (!story) recordPost(post);
       setGrab({ url, status: 'ready', post });
       const [first] = post.items;
@@ -98,6 +107,17 @@ export default function BrowserScreen() {
   );
   // Na escolha de stories, já vem marcado só o que está na tela.
   const currentStory = post?.kind === 'story' ? post.items.find((i) => i.id === storyMedia) : undefined;
+  const failure = post?.items.map((i) => downloads[entryKey(post, i)]).find((s) => s?.status === 'error');
+  const failed = Boolean(failure);
+  // Motivo do erro visível no botão: sem ele não dá para saber o que o Instagram recusou.
+  const errorDetail =
+    grab?.status === 'error'
+      ? grab.message
+      : failure?.status === 'error'
+        ? failure.error instanceof Error
+          ? failure.error.message
+          : String(failure.error)
+        : null;
   const active = post?.items.map((i) => downloads[entryKey(post, i)]).filter((s) => s?.status === 'downloading') ?? [];
   const progress = active.length
     ? active.reduce((sum, s) => sum + (s?.status === 'downloading' && s.totalBytes ? s.bytesWritten / s.totalBytes : 0), 0) /
@@ -110,6 +130,9 @@ export default function BrowserScreen() {
   else if (grab?.status === 'error') {
     label = 'Erro — tocar para tentar de novo';
     icon = 'alert-circle';
+  } else if (failed && !active.length) {
+    label = 'Falha no download — tocar para tentar de novo';
+    icon = 'alert-circle';
   } else if (active.length) label = progress ? `Baixando… ${Math.round(progress * 100)}%` : 'Baixando…';
   else if (post && post.items.length > 1) {
     label = `Escolher itens (${post.items.length})`;
@@ -121,7 +144,7 @@ export default function BrowserScreen() {
 
   function onPill() {
     if (!target) return;
-    if (post && post.items.length > 1 && grab?.status === 'ready') return setSelecting(true);
+    if (post && post.items.length > 1 && grab?.status === 'ready' && !failed) return setSelecting(true);
     if (post && downloaded.size && !active.length) {
       const entry = getEntry(entryKey(post, post.items[0]));
       if (entry) return router.push({ pathname: '/player/[key]', params: { key: entry.key } });
@@ -142,6 +165,8 @@ export default function BrowserScreen() {
         onMessage={({ nativeEvent }) => {
           const msg = parseWebMessage(nativeEvent.data);
           if (msg?.type === 'url') onUrl(msg.value);
+          if (msg?.type === 'user-ids') rememberUserIds(msg.value);
+          if (msg?.type === 'reel') rememberReel(msg.value.key, msg.value.reel);
           // "Copiar link" dentro do site: baixa na hora, sem passar pela área de transferência.
           if (msg?.type === 'copy') {
             const url = linkFrom(msg.value);
@@ -162,7 +187,7 @@ export default function BrowserScreen() {
           onPress={onPill}
           style={({ pressed }) => [
             styles.pill,
-            { backgroundColor: grab?.status === 'error' ? t.danger : t.accent, opacity: pressed ? 0.85 : 1 },
+            { backgroundColor: grab?.status === 'error' || failed ? t.danger : t.accent, opacity: pressed ? 0.85 : 1 },
           ]}
           accessibilityRole="button"
           accessibilityLabel={label}
@@ -172,9 +197,16 @@ export default function BrowserScreen() {
           ) : (
             <Ionicons name={icon} size={20} color={t.accentText} />
           )}
-          <Text style={[styles.pillText, { color: t.accentText }]} numberOfLines={1}>
-            {label}
-          </Text>
+          <View style={{ flexShrink: 1 }}>
+            <Text style={[styles.pillText, { color: t.accentText }]} numberOfLines={1}>
+              {label}
+            </Text>
+            {errorDetail ? (
+              <Text style={[styles.pillDetail, { color: t.accentText }]} numberOfLines={2}>
+                {errorDetail}
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
       ) : null}
 
@@ -214,4 +246,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   pillText: { fontSize: 15, fontWeight: '600' },
+  pillDetail: { fontSize: 12, opacity: 0.85, marginTop: 1 },
 });

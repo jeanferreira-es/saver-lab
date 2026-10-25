@@ -6,6 +6,8 @@ type FloatingBubbleModule = {
   requestPermission(): void;
   /** `scheme` é o esquema de deep link do app, usado para abrir o link copiado. */
   start(scheme: string): void;
+  /** Guarda o esquema de deep link usado pelo "Compartilhar" (sem precisar da bolha). */
+  setScheme(scheme: string): void;
   stop(): void;
   isRunning(): boolean;
 };

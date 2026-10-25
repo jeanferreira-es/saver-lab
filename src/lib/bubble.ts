@@ -40,8 +40,13 @@ export function isBubbleRunning() {
   return FloatingBubble?.isRunning() ?? false;
 }
 
-/** Chamado quando o app abre ou volta ao foco: liga o balão se o usuário deixou ativado. */
+/**
+ * Chamado quando o app abre ou volta ao foco: liga o balão se o usuário deixou
+ * ativado e guarda o esquema de deep link usado pelo "Compartilhar" do Android.
+ */
 export async function syncBubble() {
+  // `?.`: builds nativos anteriores ao "Compartilhar" não têm esta função.
+  FloatingBubble?.setScheme?.(scheme());
   if (!FloatingBubble || !(await getSettings()).floatingBubble) return;
   if (FloatingBubble.isRunning() || !FloatingBubble.canDrawOverlays()) return;
   try {

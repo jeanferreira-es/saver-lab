@@ -1,16 +1,25 @@
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { syncBubble } from '@/lib/bubble';
 import { loadHistory } from '@/lib/history';
 import { loadProfiles } from '@/lib/profiles';
 import { loadSession } from '@/lib/session';
 import { getSettings } from '@/lib/settings';
-import { applyThemePreference, useTheme } from '@/lib/theme';
+import { applyThemePreference, useColorScheme, useTheme } from '@/lib/theme';
 
 export default function RootLayout() {
+  const scheme = useColorScheme();
   const t = useTheme();
+  // Tema da navegação com as mesmas cores: fundos e cabeçalhos que não recebem estilo próprio.
+  const navTheme = useMemo(() => {
+    const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+    return {
+      ...base,
+      colors: { ...base.colors, primary: t.accent, background: t.bg, card: t.card, text: t.text, border: t.border },
+    };
+  }, [scheme, t]);
 
   useEffect(() => {
     loadHistory();
@@ -21,8 +30,8 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <>
-      <StatusBar style="auto" />
+    <ThemeProvider value={navTheme}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: t.bg },
@@ -35,6 +44,6 @@ export default function RootLayout() {
         <Stack.Screen name="profile/[username]" options={{ title: 'Perfil' }} />
         <Stack.Screen name="instagram-login" options={{ title: 'Entrar no Instagram', presentation: 'modal' }} />
       </Stack>
-    </>
+    </ThemeProvider>
   );
 }

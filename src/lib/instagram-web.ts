@@ -7,6 +7,8 @@ export const IG_APP_ID = '936619743392459';
 export type WebMessage =
   | { type: 'url'; value: string }
   | { type: 'copy'; value: string }
+  | { type: 'user-ids'; value: Record<string, string> }
+  | { type: 'reel'; value: { key: string; reel: RawReel } }
   | { type: 'response'; id: string; status: number; body: string }
   | { type: 'response-error'; id: string; error: string };
 
@@ -20,7 +22,10 @@ export function parseWebMessage(data: string): WebMessage | null {
 
 /**
  * Injetado antes da página carregar. Avisa o app quando a rota muda (o site
- * troca de página sem recarregar) e quando algo é copiado ("Copiar link").
+ * troca de página sem recarregar), quando algo é copiado ("Copiar link") e
+ * quais ids de usuário e stories apareceram nos dados que o próprio site
+ * carregou. O story na tela já veio com a sessão do usuário: reaproveitá-lo
+ * evita consultas extras (que o Instagram limita ou recusa).
  */
 export const OBSERVER_SCRIPT = `
 (function () {
@@ -52,6 +57,81 @@ export const OBSERVER_SCRIPT = `
       : String(window.getSelection() || '');
     if (text) send('copy', text);
   });
+
+  function isStory(i) {
+    return i && typeof i === 'object' && (i.video_versions || i.image_versions2) &&
+      (i.product_type === 'story' || i.expiring_at != null);
+  }
+  var reelsSent = {};
+  // Conjunto de stories (de um perfil ou destaque): manda ao app só o necessário para baixar.
+  function captureReel(v) {
+    var id = v.id != null ? String(v.id) : '';
+    var user = v.user || {};
+    var key = id.indexOf('highlight:') === 0 ? id : user.username ? String(user.username).toLowerCase() : null;
+    if (!key) return;
+    var items = [];
+    for (var i = 0; i < v.items.length; i++) {
+      var it = v.items[i];
+      if (!isStory(it)) continue;
+      var video = it.video_versions && it.video_versions[0];
+      var image = it.image_versions2 && it.image_versions2.candidates && it.image_versions2.candidates[0];
+      items.push({
+        pk: String(it.pk != null ? it.pk : String(it.id).split('_')[0]),
+        video_versions: video ? [{ url: video.url }] : undefined,
+        image_versions2: image ? { candidates: [{ url: image.url }] } : undefined,
+        video_duration: it.video_duration,
+        original_width: it.original_width,
+        original_height: it.original_height,
+        taken_at: it.taken_at
+      });
+    }
+    var signature = items.map(function (x) { return x.pk; }).join(',');
+    if (!items.length || reelsSent[key] === signature) return;
+    reelsSent[key] = signature;
+    send('reel', { key: key, reel: { id: id || undefined, user: { username: user.username, full_name: user.full_name }, items: items } });
+  }
+
+  var known = {};
+  var found = null;
+  function collect(v, depth) {
+    if (!v || typeof v !== 'object' || depth > 60) return;
+    if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) collect(v[i], depth + 1); return; }
+    var id = v.pk != null ? v.pk : v.id;
+    if (typeof v.username === 'string' && id != null && /^[0-9]+$/.test(String(id)) && known[v.username] !== String(id)) {
+      known[v.username] = String(id);
+      if (!found) { found = {}; setTimeout(function () { send('user-ids', found); found = null; }, 1000); }
+      found[v.username] = String(id);
+    }
+    if (Array.isArray(v.items) && v.items.some(isStory)) captureReel(v);
+    for (var k in v) if (v[k] && typeof v[k] === 'object') collect(v[k], depth + 1);
+  }
+  function inspect(text) {
+    if (typeof text !== 'string' || text.indexOf('"username"') < 0) return;
+    // Algumas respostas vêm em várias linhas de JSON.
+    text.split('\\n').forEach(function (line) { try { collect(JSON.parse(line), 0); } catch (e) {} });
+  }
+  var originalFetch = window.fetch;
+  window.fetch = function () {
+    return originalFetch.apply(this, arguments).then(function (r) {
+      try { r.clone().text().then(inspect, function () {}); } catch (e) {}
+      return r;
+    });
+  };
+  var originalSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function () {
+    this.addEventListener('load', function () {
+      try {
+        if (this.responseType === 'json') collect(this.response, 0);
+        else if (!this.responseType || this.responseType === 'text') inspect(this.responseText);
+      } catch (e) {}
+    });
+    return originalSend.apply(this, arguments);
+  };
+  // Dados que já vêm embutidos no HTML da página.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('script[type="application/json"]').forEach(function (s) { inspect(s.textContent); });
+  });
+
   report();
 })();
 true;
@@ -133,23 +213,34 @@ export function parseStoryUrl(text: string | null | undefined): StoryTarget | nu
     : { url: `${INSTAGRAM_HOME}stories/${username}/`, reel: { username }, mediaId: mediaId ?? null };
 }
 
+export const RATE_LIMITED = 'O Instagram limitou as consultas por agora (HTTP 429). Aguarde alguns minutos e tente de novo.';
+
 /**
  * Busca os stories pela própria página do Instagram, com a sessão do usuário.
- * Para stories de um perfil, descobre antes o id numérico do usuário.
+ * Para stories de um perfil, usa o id já conhecido ou descobre antes pelo perfil.
  */
-export function storiesFetchScript(id: string, reel: StoryReel) {
+export function storiesFetchScript(id: string, reel: StoryReel, knownUserId: string | null) {
   return `
 (function () {
   function send(msg) { window.ReactNativeWebView.postMessage(JSON.stringify(msg)); }
+  // Mesmos cabeçalhos que o site manda nas chamadas à API web.
+  var csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/) || [])[1];
+  var headers = { 'X-IG-App-ID': '${IG_APP_ID}', 'X-Requested-With': 'XMLHttpRequest', 'X-IG-WWW-Claim': '0' };
+  if (csrf) headers['X-CSRFToken'] = csrf;
   function get(path) {
-    return fetch(path, { credentials: 'include', headers: { 'X-IG-App-ID': '${IG_APP_ID}' } });
+    return fetch(path, { credentials: 'include', headers: headers });
   }
   var reel = ${JSON.stringify(reel)};
+  var knownUserId = ${JSON.stringify(knownUserId)};
   var reelId = reel.highlightId
     ? Promise.resolve('highlight:' + reel.highlightId)
+    : knownUserId
+    ? Promise.resolve(knownUserId)
     : get('/api/v1/users/web_profile_info/?username=' + encodeURIComponent(reel.username))
         .then(function (r) {
-          if (!r.ok) throw new Error(r.status === 404 ? 'Perfil não encontrado.' : 'HTTP ' + r.status + ' ao buscar o perfil.');
+          if (r.status === 404) throw new Error('Perfil não encontrado.');
+          if (r.status === 429) throw new Error('${RATE_LIMITED}');
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' ao buscar o perfil.');
           return r.json();
         })
         .then(function (j) { return j.data.user.id; });
@@ -162,26 +253,35 @@ true;
 `;
 }
 
-type RawStoryItem = {
+export type RawStoryItem = {
   pk: string | number;
   video_versions?: { url: string }[];
   image_versions2?: { candidates?: { url: string }[] };
   video_duration?: number;
   original_width?: number;
   original_height?: number;
+  taken_at?: number;
 };
 
-type RawReel = { id?: string | number; user?: { username?: string; full_name?: string }; items?: RawStoryItem[] };
+export type RawReel = { id?: string | number; user?: { username?: string; full_name?: string }; items?: RawStoryItem[] };
+
+/** Chave de um conjunto de stories: o usuário, ou `highlight:<id>` para destaques. */
+export function reelKey(reel: StoryReel) {
+  return 'highlightId' in reel ? `highlight:${reel.highlightId}` : reel.username.toLowerCase();
+}
 
 /** Converte a resposta de `reels_media` num "post" com um item por story. */
 export function parseStories(body: string, target: StoryTarget): PostInfo | null {
-  let reel: RawReel | undefined;
   try {
     const json = JSON.parse(body);
-    reel = json?.reels_media?.[0] ?? Object.values(json?.reels ?? {})[0];
+    return storyPost(json?.reels_media?.[0] ?? Object.values(json?.reels ?? {})[0], target);
   } catch {
     return null;
   }
+}
+
+/** Monta o "post" de um conjunto de stories, venha da API ou dos dados que o site já carregou. */
+export function storyPost(reel: RawReel | undefined, target: StoryTarget): PostInfo | null {
   const items: MediaItem[] = [];
   for (const raw of reel?.items ?? []) {
     // A primeira versão/candidata é a de maior resolução.

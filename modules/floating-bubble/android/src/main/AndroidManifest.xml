@@ -23,5 +23,20 @@
       android:taskAffinity=""
       android:launchMode="singleInstance"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+    <!-- Coloca o app na lista de "Compartilhar" para links: abre a aba Baixar com o link. -->
+    <activity
+      android:name=".ShareActivity"
+      android:exported="true"
+      android:excludeFromRecents="true"
+      android:noHistory="true"
+      android:taskAffinity=""
+      android:theme="@android:style/Theme.Translucent.NoTitleBar">
+      <intent-filter>
+        <action android:name="android.intent.action.SEND" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="text/plain" />
+      </intent-filter>
+    </activity>
   </application>
 </manifest>

@@ -36,6 +36,11 @@ class FloatingBubbleModule : Module() {
       ContextCompat.startForegroundService(context, Intent(context, BubbleService::class.java))
     }
 
+    // Guarda o esquema de deep link para o "Compartilhar" funcionar mesmo sem a bolha ligada.
+    Function("setScheme") { scheme: String ->
+      BubbleService.saveScheme(context, scheme)
+    }
+
     Function("stop") {
       context.stopService(Intent(context, BubbleService::class.java))
     }
