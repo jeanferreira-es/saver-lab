@@ -1,4 +1,3 @@
-import { getSession } from './session';
 import { getSettings } from './settings';
 
 export type MediaItem = {
@@ -35,14 +34,6 @@ export type ProfilePost = {
   takenAt: number | null;
 };
 
-export type ProfileInfo = {
-  username: string;
-  fullName: string | null;
-  avatar: string | null;
-  isPrivate: boolean;
-  posts: ProfilePost[];
-};
-
 const INSTAGRAM_URL = /https:\/\/(www\.)?instagram\.com\/(p|reel|reels|tv)\/[\w-]+\/?(\?[^\s]*)?/i;
 
 /** Extrai o primeiro link do Instagram de um texto qualquer (ex.: o que veio do "Copiar link"). */
@@ -69,25 +60,6 @@ export async function fetchInfo(url: string, signal?: AbortSignal): Promise<Post
     throw new Error(body.error ?? `Erro ${res.status} no servidor.`);
   }
   return body as PostInfo;
-}
-
-export async function fetchProfile(username: string, signal?: AbortSignal): Promise<ProfileInfo> {
-  const endpoint = `${await base()}/api/profile?username=${encodeURIComponent(username)}`;
-  const session = getSession();
-  console.log('[api] consultando perfil', username, session ? 'com sessão do Instagram' : 'sem sessão');
-  let res: Response;
-  try {
-    res = await fetch(endpoint, { signal, headers: session ? { 'X-IG-Session': session.cookie } : undefined });
-  } catch (e) {
-    if ((e as Error).name !== 'AbortError') console.log('[api] falha de conexão em', endpoint, e);
-    throw e;
-  }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    console.log('[api] resposta de erro', res.status, endpoint, body);
-    throw new Error(body.error ?? `Erro ${res.status} no servidor.`);
-  }
-  return body as ProfileInfo;
 }
 
 export async function downloadUrl(url: string, item: MediaItem) {

@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
@@ -11,7 +11,7 @@ import { extractInstagramUrl, fetchInfo, type MediaItem, type PostInfo } from '@
 import { entryKey, startDownload, useDownloadStates } from '@/lib/downloader';
 import { getEntry, useHistory } from '@/lib/history';
 import { INSTAGRAM_HOME, OBSERVER_SCRIPT, parseStoryUrl, parseWebMessage, type StoryTarget } from '@/lib/instagram-web';
-import { recordPost } from '@/lib/profiles';
+import { recordPost, recordVisit } from '@/lib/profiles';
 import { captureSession, getSession, loginAvailable } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
 import { cachedStories, rememberReel } from '@/lib/story-cache';
@@ -34,6 +34,17 @@ export default function BrowserScreen() {
   const [storyMedia, setStoryMedia] = useState<string | null>(null);
   const [grab, setGrab] = useState<Grab | null>(null);
   const [selecting, setSelecting] = useState(false);
+
+  // Página pedida por outra tela (ex.: "Instagram" no perfil); `t` repete o pedido do mesmo link.
+  const params = useLocalSearchParams<{ url?: string; t?: string }>();
+  const requested = params.url?.startsWith(INSTAGRAM_HOME) ? params.url : null;
+  const [initialUrl] = useState(() => requested ?? INSTAGRAM_HOME);
+  const opened = useRef(params.t);
+  useEffect(() => {
+    if (!requested || opened.current === params.t) return;
+    opened.current = params.t;
+    webview.current?.injectJavaScript(`location.href = ${JSON.stringify(requested)}; true;`);
+  }, [requested, params.t]);
 
   // Botão voltar do Android navega dentro da WebView enquanto houver histórico.
   useFocusEffect(
@@ -87,6 +98,7 @@ export default function BrowserScreen() {
       // A URL guardada é a do conjunto; o story aberto vem da URL atual.
       const post = story ? await fetchStories({ ...story, mediaId: story.mediaId ?? storyMedia }) : await fetchInfo(url);
       if (!story) recordPost(post);
+      else if (post.username) recordVisit(post.username, post.author);
       setGrab({ url, status: 'ready', post });
       const [first] = post.items;
       if (post.items.length > 1) setSelecting(true);
@@ -156,7 +168,7 @@ export default function BrowserScreen() {
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: t.bg }}>
       <WebView
         ref={webview}
-        source={{ uri: INSTAGRAM_HOME }}
+        source={{ uri: initialUrl }}
         sharedCookiesEnabled
         allowsBackForwardNavigationGestures
         injectedJavaScriptBeforeContentLoaded={OBSERVER_SCRIPT}

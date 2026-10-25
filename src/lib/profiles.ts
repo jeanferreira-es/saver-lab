@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 
-import type { PostInfo, ProfileInfo, ProfilePost } from './api';
+import type { PostInfo, ProfilePost } from './api';
 
 const KEY = 'profiles:v1';
 const MAX_PROFILES = 30;
@@ -73,9 +73,9 @@ export async function recordPost(post: PostInfo) {
   }));
 }
 
-/** Registra a visita a um perfil aberto na aba Perfis. */
-export async function recordProfile(profile: ProfileInfo) {
-  await visit(profile.username, (p) => ({ ...p, fullName: profile.fullName, avatar: profile.avatar }));
+/** Registra a visita a um perfil (aberto na aba Perfis ou autor de um story baixado). */
+export async function recordVisit(username: string, fullName?: string | null) {
+  await visit(username, (p) => ({ ...p, fullName: p.fullName ?? fullName ?? null }));
 }
 
 export async function removeProfile(username: string) {

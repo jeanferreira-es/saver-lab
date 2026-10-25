@@ -95,6 +95,7 @@ async function downloadItem(
       key,
       postUrl: post.url,
       author: post.author,
+      username: post.username,
       caption: post.caption || post.title,
       type: item.type,
       fileUri: file.uri,

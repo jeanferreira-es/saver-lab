@@ -2,16 +2,24 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
+import type { ReactElement } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { EmptyState, IconButton, formatBytes, formatDuration } from '@/components/ui';
 import { deleteDownload, saveToGallery } from '@/lib/downloader';
-import { useHistory, type HistoryEntry } from '@/lib/history';
+import type { HistoryEntry } from '@/lib/history';
 import { useTheme } from '@/lib/theme';
 
-export default function DownloadsScreen() {
+type Props = {
+  entries: HistoryEntry[];
+  header?: ReactElement;
+  emptyTitle: string;
+  emptyText: string;
+};
+
+/** Downloads com reprodução, compartilhar, salvar na galeria e apagar. */
+export function DownloadList({ entries, header, emptyTitle, emptyText }: Props) {
   const t = useTheme();
-  const history = useHistory();
 
   async function share(entry: HistoryEntry) {
     if (!(await Sharing.isAvailableAsync())) {
@@ -41,17 +49,12 @@ export default function DownloadsScreen() {
 
   return (
     <FlatList
-      data={history}
+      data={entries}
       keyExtractor={(e) => e.key}
-      contentContainerStyle={history.length ? styles.list : { flexGrow: 1, justifyContent: 'center' }}
+      contentContainerStyle={styles.list}
       ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-      ListEmptyComponent={
-        <EmptyState
-          icon="albums-outline"
-          title="Nenhum download ainda"
-          text="As fotos e os vídeos que você baixar aparecem aqui, mesmo sem internet."
-        />
-      }
+      ListHeaderComponent={header}
+      ListEmptyComponent={<EmptyState icon="albums-outline" title={emptyTitle} text={emptyText} />}
       renderItem={({ item }) => (
         <View style={[styles.row, { backgroundColor: t.card, borderColor: t.border }]}>
           <Pressable
@@ -74,7 +77,7 @@ export default function DownloadsScreen() {
             </View>
             <View style={{ flex: 1, gap: 4 }}>
               <Text numberOfLines={1} style={{ color: t.text, fontWeight: '600' }}>
-                {item.author ? `@${item.author}` : 'Instagram'}
+                {item.username ? `@${item.username}` : item.author ? `@${item.author}` : 'Instagram'}
               </Text>
               {item.caption ? (
                 <Text numberOfLines={2} style={{ color: t.muted, fontSize: 13, lineHeight: 18 }}>
@@ -103,7 +106,7 @@ export default function DownloadsScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { padding: 16, paddingBottom: 48 },
+  list: { padding: 16, paddingBottom: 48, flexGrow: 1 },
   row: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 12, gap: 8 },
   main: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   thumb: { width: 64, height: 80, borderRadius: 10, overflow: 'hidden' },

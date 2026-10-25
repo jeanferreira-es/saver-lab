@@ -8,6 +8,8 @@ export type HistoryEntry = {
   key: string;
   postUrl: string;
   author: string | null;
+  /** Usuário do autor no Instagram (downloads antigos não têm; neles `author` costuma ser o usuário). */
+  username?: string | null;
   caption: string;
   type: 'video' | 'image';
   /** URI local do arquivo (documentDirectory) */

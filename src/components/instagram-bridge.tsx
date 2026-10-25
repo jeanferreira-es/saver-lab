@@ -2,13 +2,11 @@ import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-import type { PostInfo, ProfileInfo } from '@/lib/api';
+import type { PostInfo } from '@/lib/api';
 import {
   INSTAGRAM_HOME,
-  parseProfile,
   parseStories,
   parseWebMessage,
-  profileFetchScript,
   RATE_LIMITED,
   storiesFetchScript,
   type StoryTarget,
@@ -16,8 +14,6 @@ import {
 import { getUserId, rememberUserIds } from '@/lib/user-ids';
 
 export type InstagramBridgeHandle = {
-  /** Busca o perfil pelo celular, com a sessão do usuário (sem passar pelo servidor). */
-  fetchProfile(username: string): Promise<ProfileInfo>;
   /** Busca os stories (ou um destaque) pelo celular, com a sessão do usuário. */
   fetchStories(target: StoryTarget): Promise<PostInfo>;
 };
@@ -69,18 +65,6 @@ export const InstagramBridge = forwardRef<InstagramBridgeHandle>(function Instag
   }
 
   useImperativeHandle(ref, () => ({
-    async fetchProfile(username) {
-      const { status, body } = await request((id) => profileFetchScript(id, username));
-      console.log('[bridge] perfil pelo celular: HTTP', status);
-      if (status === 404) throw new Error('Perfil não encontrado.');
-      if (status === 429) throw new Error(RATE_LIMITED);
-      try {
-        rememberUser(JSON.parse(body)?.data?.user);
-      } catch {}
-      const profile = status === 200 ? parseProfile(body) : null;
-      if (!profile) throw new Error(`O Instagram recusou a consulta pelo celular (HTTP ${status}).`);
-      return profile;
-    },
     async fetchStories(target) {
       const known = 'username' in target.reel ? await getUserId(target.reel.username) : null;
       const { status, body } = await request((id) => storiesFetchScript(id, target.reel, known));

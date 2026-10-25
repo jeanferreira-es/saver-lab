@@ -50,7 +50,7 @@ export default function ProfilesScreen() {
   }
 
   function confirmLogout() {
-    Alert.alert('Sair do Instagram?', 'O app apaga a sessão salva. Sem ela, o feed dos perfis pode não carregar.', [
+    Alert.alert('Sair do Instagram?', 'O app apaga a sessão salva. Sem ela, stories e perfis privados não carregam.', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Sair', style: 'destructive', onPress: () => logout() },
     ]);
@@ -72,7 +72,7 @@ export default function ProfilesScreen() {
               color={session ? t.success : t.muted}
             />
             <Text style={{ flex: 1, color: session ? t.text : t.muted, fontSize: 14, lineHeight: 19 }}>
-              {session ? 'Conectado ao Instagram' : 'Entre no Instagram para ver as últimas publicações dos perfis.'}
+              {session ? 'Conectado ao Instagram' : 'Entre no Instagram para baixar stories e navegar com a sua conta.'}
             </Text>
             {session ? (
               <Button compact label="Sair" variant="secondary" onPress={confirmLogout} />
@@ -100,7 +100,7 @@ export default function ProfilesScreen() {
         <EmptyState
           icon="people-outline"
           title="Nenhum perfil visitado"
-          text="Os autores dos posts que você buscar e os perfis que abrir aparecem aqui."
+          text="Os autores do que você baixar e os perfis que abrir aparecem aqui, com os seus downloads."
         />
       }
       renderItem={({ item }) => (
