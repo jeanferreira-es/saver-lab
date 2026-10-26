@@ -7,8 +7,10 @@ export const IG_APP_ID = '936619743392459';
 export type WebMessage =
   | { type: 'url'; value: string }
   | { type: 'copy'; value: string }
+  | { type: 'visible'; value: string | null }
   | { type: 'user-ids'; value: Record<string, string> }
   | { type: 'reel'; value: { key: string; reel: RawReel } }
+  | { type: 'post'; value: CapturedPost }
   | { type: 'response'; id: string; status: number; body: string }
   | { type: 'response-error'; id: string; error: string };
 
@@ -22,7 +24,8 @@ export function parseWebMessage(data: string): WebMessage | null {
 
 /**
  * Injetado antes da página carregar. Avisa o app quando a rota muda (o site
- * troca de página sem recarregar), quando algo é copiado ("Copiar link") e
+ * troca de página sem recarregar), quando algo é copiado ("Copiar link"), qual
+ * post do feed está na tela (para baixar sem precisar copiar o link) e
  * quais ids de usuário e stories apareceram nos dados que o próprio site
  * carregou. O story na tela já veio com a sessão do usuário: reaproveitá-lo
  * evita consultas extras (que o Instagram limita ou recusa).
@@ -62,6 +65,44 @@ export const OBSERVER_SCRIPT = `
     return i && typeof i === 'object' && (i.video_versions || i.image_versions2) &&
       (i.product_type === 'story' || i.expiring_at != null);
   }
+  // Post do feed (ou aberto): manda as URLs das mídias para baixar direto, sem o servidor.
+  function postItem(m) {
+    var video = m.video_versions && m.video_versions[0];
+    var image = m.image_versions2 && m.image_versions2.candidates && m.image_versions2.candidates[0];
+    // Vídeo sem a URL do arquivo (só streaming): fica para o servidor.
+    if ((m.media_type === 2 && !video) || (!video && !image)) return null;
+    return {
+      pk: String(m.pk != null ? m.pk : m.id),
+      video: video ? video.url : undefined,
+      image: image ? image.url : undefined,
+      duration: m.video_duration,
+      width: m.original_width,
+      height: m.original_height
+    };
+  }
+  var postsSent = {};
+  function capturePost(v) {
+    var children = v.carousel_media && v.carousel_media.length ? v.carousel_media : [v];
+    var items = [];
+    for (var i = 0; i < children.length; i++) {
+      var item = postItem(children[i]);
+      // Post incompleto: melhor o servidor do que baixar só parte do carrossel.
+      if (!item) return;
+      items.push(item);
+    }
+    var signature = items.length + ':' + (items[0].video || items[0].image);
+    if (postsSent[v.code] === signature) return;
+    postsSent[v.code] = signature;
+    var user = v.user || v.owner || {};
+    send('post', {
+      code: v.code,
+      username: user.username,
+      fullName: user.full_name,
+      caption: v.caption && v.caption.text ? String(v.caption.text).slice(0, 300) : '',
+      items: items
+    });
+  }
+
   var reelsSent = {};
   // Conjunto de stories (de um perfil ou destaque): manda ao app só o necessário para baixar.
   function captureReel(v) {
@@ -103,6 +144,8 @@ export const OBSERVER_SCRIPT = `
       found[v.username] = String(id);
     }
     if (Array.isArray(v.items) && v.items.some(isStory)) captureReel(v);
+    if (typeof v.code === 'string' && !v.carousel_parent_id && !isStory(v) &&
+        (v.carousel_media || v.video_versions || v.image_versions2)) capturePost(v);
     for (var k in v) if (v[k] && typeof v[k] === 'object') collect(v[k], depth + 1);
   }
   function inspect(text) {
@@ -127,6 +170,46 @@ export const OBSERVER_SCRIPT = `
     });
     return originalSend.apply(this, arguments);
   };
+  // Post do feed mais visível na tela: cada post é um <article> com o link dele.
+  var POST_TYPES = { p: 'p', reel: 'reel', reels: 'reel', tv: 'tv' };
+  function postLink(article) {
+    var links = article.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var parts = links[i].pathname.split('/').filter(Boolean);
+      for (var j = 0; j < parts.length - 1; j++) {
+        if (POST_TYPES[parts[j]] && parts[j + 1] !== 'audio') {
+          return location.origin + '/' + POST_TYPES[parts[j]] + '/' + parts[j + 1] + '/';
+        }
+      }
+    }
+    return null;
+  }
+  var visible;
+  function findVisible() {
+    var articles = document.querySelectorAll('article');
+    var height = window.innerHeight;
+    var best = null;
+    var bestArea = 0;
+    for (var i = 0; i < articles.length; i++) {
+      var r = articles[i].getBoundingClientRect();
+      var area = Math.min(r.bottom, height) - Math.max(r.top, 0);
+      if (area > bestArea) { bestArea = area; best = articles[i]; }
+    }
+    // Só conta se o post ocupar uma parte razoável da tela.
+    var link = best && bestArea > height * 0.25 ? postLink(best) : null;
+    if (link !== visible) { visible = link; send('visible', link); }
+  }
+  var scheduled = false;
+  function scheduleVisible() {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(function () { scheduled = false; findVisible(); }, 200);
+  }
+  // "true": pega também a rolagem de elementos internos, não só a da página.
+  window.addEventListener('scroll', scheduleVisible, true);
+  // Posts que aparecem sem rolagem (feed carregando, troca de página).
+  setInterval(findVisible, 1500);
+
   // Dados que já vêm embutidos no HTML da página.
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('script[type="application/json"]').forEach(function (s) { inspect(s.textContent); });
@@ -149,10 +232,30 @@ export type StoryTarget = {
 
 const STORY_URL = /https:\/\/(?:www\.)?instagram\.com\/stories\/(?:highlights\/(\d+)|([\w.]+))(?:\/(\d+))?/i;
 
-/** Reconhece `/stories/<usuário>/<id>/` e `/stories/highlights/<id>/`. */
-export function parseStoryUrl(text: string | null | undefined): StoryTarget | null {
-  const m = text?.match(STORY_URL);
+// Destaque compartilhado pelo app oficial: `/s/<base64 de "highlight:<id>">?story_media_id=<id>_<usuário>`.
+const SHARED_HIGHLIGHT = /https:\/\/(?:www\.)?instagram\.com\/s\/([\w=-]+)\/?(\?\S*)?/i;
+
+function sharedHighlight(text: string): StoryTarget | null {
+  const m = text.match(SHARED_HIGHLIGHT);
   if (!m) return null;
+  let decoded: string;
+  try {
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    decoded = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  } catch {
+    return null;
+  }
+  const highlightId = decoded.match(/^highlight:(\d+)$/)?.[1];
+  if (!highlightId) return null;
+  const mediaId = m[2]?.match(/story_media_id=(\d+)/)?.[1] ?? null;
+  return { url: `${INSTAGRAM_HOME}stories/highlights/${highlightId}/`, reel: { highlightId }, mediaId };
+}
+
+/** Reconhece `/stories/<usuário>/<id>/`, `/stories/highlights/<id>/` e destaques compartilhados (`/s/...`). */
+export function parseStoryUrl(text: string | null | undefined): StoryTarget | null {
+  if (!text) return null;
+  const m = text.match(STORY_URL);
+  if (!m) return sharedHighlight(text);
   const [, highlightId, username, mediaId] = m;
   return highlightId
     ? { url: `${INSTAGRAM_HOME}stories/highlights/${highlightId}/`, reel: { highlightId }, mediaId: mediaId ?? null }
@@ -160,6 +263,11 @@ export function parseStoryUrl(text: string | null | undefined): StoryTarget | nu
 }
 
 export const RATE_LIMITED = 'O Instagram limitou as consultas por agora (HTTP 429). Aguarde alguns minutos e tente de novo.';
+
+/** Página do site que abre o story: o do link, quando ele informa qual é. */
+export function storyPageUrl(target: StoryTarget) {
+  return 'username' in target.reel && target.mediaId ? `${target.url}${target.mediaId}/` : target.url;
+}
 
 /**
  * Busca os stories pela própria página do Instagram, com a sessão do usuário.
@@ -207,6 +315,15 @@ export type RawStoryItem = {
   original_width?: number;
   original_height?: number;
   taken_at?: number;
+};
+
+/** Post como o script injetado o captura dos dados do site (ver `capturePost`). */
+export type CapturedPost = {
+  code: string;
+  username?: string;
+  fullName?: string;
+  caption?: string;
+  items: { pk: string; video?: string; image?: string; duration?: number; width?: number; height?: number }[];
 };
 
 export type RawReel = { id?: string | number; user?: { username?: string; full_name?: string }; items?: RawStoryItem[] };

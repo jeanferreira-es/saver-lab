@@ -10,8 +10,16 @@ import { Button, Card, formatBytes, formatDuration } from '@/components/ui';
 import { extractInstagramUrl, fetchInfo, type MediaItem, type PostInfo } from '@/lib/api';
 import { entryKey, startDownload, useDownloadStates, type DownloadState } from '@/lib/downloader';
 import { getEntry, useHistory } from '@/lib/history';
+import { parseStoryUrl, storyPageUrl } from '@/lib/instagram-web';
+import { cachedPost } from '@/lib/post-cache';
 import { recordPost } from '@/lib/profiles';
 import { useTheme } from '@/lib/theme';
+
+/** Link de post/reel/IGTV ou a página de um story, se o texto tiver um. */
+function linkFrom(text: string) {
+  const story = parseStoryUrl(text);
+  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null);
+}
 
 export default function DownloadScreen() {
   const t = useTheme();
@@ -34,7 +42,7 @@ export default function DownloadScreen() {
       Clipboard.hasStringAsync()
         .then((has) => (has ? Clipboard.getStringAsync() : ''))
         .then((text) => {
-          const url = extractInstagramUrl(text);
+          const url = linkFrom(text);
           if (active && url && url !== dismissed.current && url !== input.trim()) setClipboardUrl(url);
         })
         .catch(() => {});
@@ -52,9 +60,18 @@ export default function DownloadScreen() {
 
   async function search(raw = input) {
     Keyboard.dismiss();
+    // Stories só baixam com a sessão do site: abre na aba Navegar, que baixa sozinha ao carregar.
+    const story = parseStoryUrl(raw);
+    if (story && !extractInstagramUrl(raw)) {
+      setInput('');
+      setClipboardUrl(null);
+      setError(null);
+      router.navigate({ pathname: '/browser', params: { url: storyPageUrl(story), t: String(Date.now()), download: '1' } });
+      return;
+    }
     const url = extractInstagramUrl(raw);
     if (!url) {
-      setError('Cole um link de post, reel ou IGTV (ex.: instagram.com/reel/...).');
+      setError('Cole um link de post, reel, IGTV ou story (ex.: instagram.com/reel/...).');
       return;
     }
     setInput(url);
@@ -65,7 +82,8 @@ export default function DownloadScreen() {
     abort.current = new AbortController();
     setLoading(true);
     try {
-      const info = await fetchInfo(url, abort.current.signal);
+      // Post já visto na aba Navegar: baixa direto da CDN, sem o servidor.
+      const info = cachedPost(url) ?? (await fetchInfo(url, abort.current.signal));
       setPost(info);
       recordPost(info);
       const [first] = info.items;
@@ -83,7 +101,7 @@ export default function DownloadScreen() {
   async function paste() {
     const text = await Clipboard.getStringAsync();
     setInput(text);
-    if (extractInstagramUrl(text)) search(text);
+    if (linkFrom(text)) search(text);
   }
 
   function download(item: MediaItem) {

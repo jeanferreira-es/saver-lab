@@ -6,9 +6,14 @@ import android.net.Uri
 
 /** Abre o app na aba Baixar com um link do Instagram (usado pela bolha e pelo compartilhar). */
 object AppLink {
-  private val INSTAGRAM_URL = Regex("""https://(www\.)?instagram\.com/(p|reel|reels|tv)/[\w-]+/?(\?\S*)?""", RegexOption.IGNORE_CASE)
+  // Posts, reels, IGTV, stories (`/stories/<usuário>/<id>`, `/stories/highlights/<id>`)
+  // e destaques compartilhados pelo app oficial (`/s/<código>?story_media_id=...`).
+  private val INSTAGRAM_URL = Regex(
+    """https://(www\.)?instagram\.com/((p|reel|reels|tv)/[\w-]+|stories/[\w.]+(/\d+)?|stories/highlights/\d+|s/[\w=-]+)/?(\?\S*)?""",
+    RegexOption.IGNORE_CASE,
+  )
 
-  /** Primeiro link de post/reel/IGTV no texto, se houver. */
+  /** Primeiro link de post/reel/IGTV/story no texto, se houver. */
   fun find(text: String?): String? = text?.let { INSTAGRAM_URL.find(it)?.value }
 
   /**

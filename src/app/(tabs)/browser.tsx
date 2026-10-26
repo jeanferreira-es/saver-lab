@@ -1,7 +1,19 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  BackHandler,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 
@@ -10,7 +22,15 @@ import { SelectItemsModal } from '@/components/select-items-modal';
 import { extractInstagramUrl, fetchInfo, type MediaItem, type PostInfo } from '@/lib/api';
 import { entryKey, startDownload, useDownloadStates } from '@/lib/downloader';
 import { getEntry, useHistory } from '@/lib/history';
-import { INSTAGRAM_HOME, OBSERVER_SCRIPT, parseStoryUrl, parseWebMessage, type StoryTarget } from '@/lib/instagram-web';
+import {
+  INSTAGRAM_HOME,
+  OBSERVER_SCRIPT,
+  parseStoryUrl,
+  parseWebMessage,
+  reelKey,
+  type StoryTarget,
+} from '@/lib/instagram-web';
+import { cachedPost, rememberPost } from '@/lib/post-cache';
 import { recordPost, recordVisit } from '@/lib/profiles';
 import { captureSession, getSession, loginAvailable } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
@@ -32,19 +52,35 @@ export default function BrowserScreen() {
   const [current, setCurrent] = useState<string | null>(null);
   // Story exibido agora: muda sozinho conforme os stories avançam.
   const [storyMedia, setStoryMedia] = useState<string | null>(null);
+  // Post do feed mais visível na tela (sem precisar abrir nem copiar o link).
+  const [visible, setVisible] = useState<string | null>(null);
   const [grab, setGrab] = useState<Grab | null>(null);
   const [selecting, setSelecting] = useState(false);
+  // Puxar para atualizar (Android): só com a página no topo, senão rolar para cima recarregaria.
+  const [atTop, setAtTop] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  // Story aberto por outra tela (link compartilhado/copiado): baixa assim que o site carregar os dados dele.
+  const autoDownload = useRef<{ story: StoryTarget; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   // Página pedida por outra tela (ex.: "Instagram" no perfil); `t` repete o pedido do mesmo link.
-  const params = useLocalSearchParams<{ url?: string; t?: string }>();
+  const params = useLocalSearchParams<{ url?: string; t?: string; download?: string }>();
   const requested = params.url?.startsWith(INSTAGRAM_HOME) ? params.url : null;
   const [initialUrl] = useState(() => requested ?? INSTAGRAM_HOME);
-  const opened = useRef(params.t);
-  useEffect(() => {
-    if (!requested || opened.current === params.t) return;
-    opened.current = params.t;
-    webview.current?.injectJavaScript(`location.href = ${JSON.stringify(requested)}; true;`);
-  }, [requested, params.t]);
+  const handled = useRef<string | undefined>(undefined);
+
+  function waitAndDownload(story: StoryTarget) {
+    if (autoDownload.current) clearTimeout(autoDownload.current.timer);
+    // Se os dados do site não chegarem a tempo, a busca usa o plano B (consulta direta).
+    autoDownload.current = { story, timer: setTimeout(runAutoDownload, 8000) };
+  }
+
+  function runAutoDownload() {
+    const pending = autoDownload.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    autoDownload.current = null;
+    download(pending.story.url, pending.story.mediaId);
+  }
 
   // Botão voltar do Android navega dentro da WebView enquanto houver histórico.
   useFocusEffect(
@@ -71,6 +107,22 @@ export default function BrowserScreen() {
     if (link !== grab?.url && !selecting) setGrab(null);
   }
 
+  function onVisible(link: string | null) {
+    setVisible(link);
+    // No feed, o botão acompanha o post na tela; não interrompe uma busca em andamento.
+    if (!current && link !== grab?.url && grab?.status !== 'loading' && !selecting) setGrab(null);
+  }
+
+  /** Post que o site já carregou baixa direto da CDN; senão, o servidor busca. */
+  function fetchPost(url: string) {
+    const cached = cachedPost(url);
+    if (cached) {
+      console.log('[posts] usando os dados que o site já carregou', url);
+      return Promise.resolve(cached);
+    }
+    return fetchInfo(url);
+  }
+
   function fetchStories(story: StoryTarget) {
     // O story na tela já veio nos dados do site: baixa direto, sem nova consulta ao Instagram.
     const cached = cachedStories(story);
@@ -90,13 +142,15 @@ export default function BrowserScreen() {
   }
 
   /** Busca o post e baixa: mídia única vai direto; carrossel ou vários stories abrem a escolha. */
-  async function download(url: string) {
+  async function download(url: string, mediaId?: string | null) {
     setGrab({ url, status: 'loading' });
     try {
       // Stories só existem com a sessão do usuário: são buscados pelo celular, não pelo servidor.
       const story = parseStoryUrl(url);
       // A URL guardada é a do conjunto; o story aberto vem da URL atual.
-      const post = story ? await fetchStories({ ...story, mediaId: story.mediaId ?? storyMedia }) : await fetchInfo(url);
+      const post = story
+        ? await fetchStories({ ...story, mediaId: story.mediaId ?? mediaId ?? storyMedia })
+        : await fetchPost(url);
       if (!story) recordPost(post);
       else if (post.username) recordVisit(post.username, post.author);
       setGrab({ url, status: 'ready', post });
@@ -112,7 +166,19 @@ export default function BrowserScreen() {
     if (grab?.post) items.forEach((item) => startDownload(grab.post!, item));
   }
 
-  const target = grab?.url ?? current;
+  // Abre a página pedida (e, se for story com `download`, baixa ao carregar).
+  useEffect(() => {
+    if (!requested || handled.current === params.t) return;
+    // Na primeira montagem a WebView já abre direto na página pedida.
+    const firstLoad = handled.current === undefined && requested === initialUrl;
+    handled.current = params.t;
+    if (!firstLoad) webview.current?.injectJavaScript(`location.href = ${JSON.stringify(requested)}; true;`);
+    const story = params.download ? parseStoryUrl(requested) : null;
+    if (story) waitAndDownload(story);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested, params.t]);
+
+  const target = grab?.url ?? current ?? visible;
   const post = grab?.post;
   const downloaded = new Set(
     post ? post.items.filter((i) => history.some((h) => h.key === entryKey(post, i))).map((i) => i.index) : [],
@@ -164,29 +230,71 @@ export default function BrowserScreen() {
     if (grab?.status !== 'loading' && !active.length) download(target);
   }
 
+  // Nos stories, deslizar para baixo fecha o story no próprio site: não pode recarregar.
+  const canRefresh = !parseStoryUrl(current);
+
+  function refresh() {
+    setRefreshing(true);
+    webview.current?.reload();
+  }
+
+  const browser = (
+    <WebView
+      ref={webview}
+      source={{ uri: initialUrl }}
+      sharedCookiesEnabled
+      allowsBackForwardNavigationGestures
+      // iOS tem o puxar para atualizar nativo; no Android vem do ScrollView em volta.
+      pullToRefreshEnabled={canRefresh}
+      nestedScrollEnabled
+      onScroll={({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => setAtTop(nativeEvent.contentOffset.y <= 0)}
+      injectedJavaScriptBeforeContentLoaded={OBSERVER_SCRIPT}
+      onNavigationStateChange={onNavigation}
+      onLoadEnd={() => {
+        setLoading(false);
+        setRefreshing(false);
+      }}
+      onMessage={({ nativeEvent }) => {
+        const msg = parseWebMessage(nativeEvent.data);
+        if (msg?.type === 'url') onUrl(msg.value);
+        if (msg?.type === 'visible') onVisible(msg.value);
+        if (msg?.type === 'user-ids') rememberUserIds(msg.value);
+        if (msg?.type === 'post') rememberPost(msg.value);
+        if (msg?.type === 'reel') {
+          rememberReel(msg.value.key, msg.value.reel);
+          const pending = autoDownload.current?.story;
+          if (pending && reelKey(pending.reel) === msg.value.key) runAutoDownload();
+        }
+        // "Copiar link" dentro do site: baixa na hora, sem passar pela área de transferência.
+        if (msg?.type === 'copy') {
+          const url = linkFrom(msg.value);
+          if (url) download(url);
+        }
+      }}
+      style={{ flex: 1 }}
+    />
+  );
+
   return (
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: t.bg }}>
-      <WebView
-        ref={webview}
-        source={{ uri: initialUrl }}
-        sharedCookiesEnabled
-        allowsBackForwardNavigationGestures
-        injectedJavaScriptBeforeContentLoaded={OBSERVER_SCRIPT}
-        onNavigationStateChange={onNavigation}
-        onLoadEnd={() => setLoading(false)}
-        onMessage={({ nativeEvent }) => {
-          const msg = parseWebMessage(nativeEvent.data);
-          if (msg?.type === 'url') onUrl(msg.value);
-          if (msg?.type === 'user-ids') rememberUserIds(msg.value);
-          if (msg?.type === 'reel') rememberReel(msg.value.key, msg.value.reel);
-          // "Copiar link" dentro do site: baixa na hora, sem passar pela área de transferência.
-          if (msg?.type === 'copy') {
-            const url = linkFrom(msg.value);
-            if (url) download(url);
+      {Platform.OS === 'android' ? (
+        <ScrollView
+          contentContainerStyle={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refresh}
+              enabled={canRefresh && atTop}
+              colors={[t.accent]}
+              progressBackgroundColor={t.card}
+            />
           }
-        }}
-        style={{ flex: 1 }}
-      />
+        >
+          {browser}
+        </ScrollView>
+      ) : (
+        browser
+      )}
 
       {loading ? (
         <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">

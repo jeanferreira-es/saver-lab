@@ -34,11 +34,16 @@ export type ProfilePost = {
   takenAt: number | null;
 };
 
-const INSTAGRAM_URL = /https:\/\/(www\.)?instagram\.com\/(p|reel|reels|tv)\/[\w-]+\/?(\?[^\s]*)?/i;
+// O site às vezes abre posts com o usuário no caminho: `/<usuário>/p/<código>/`.
+const INSTAGRAM_URL = /https:\/\/(www\.)?instagram\.com\/(?:([\w.]+)\/)?(p|reel|reels|tv)\/([\w-]+)\/?(\?[^\s]*)?/i;
 
 /** Extrai o primeiro link do Instagram de um texto qualquer (ex.: o que veio do "Copiar link"). */
 export function extractInstagramUrl(text: string | null | undefined): string | null {
-  return text?.match(INSTAGRAM_URL)?.[0] ?? null;
+  const m = text?.match(INSTAGRAM_URL);
+  if (!m) return null;
+  const [link, , user, type, code] = m;
+  // Com o usuário no caminho, devolve o link padrão do post (o formato que o servidor entende).
+  return user ? `https://www.instagram.com/${type.toLowerCase() === 'reels' ? 'reel' : type.toLowerCase()}/${code}/` : link;
 }
 
 async function base() {
