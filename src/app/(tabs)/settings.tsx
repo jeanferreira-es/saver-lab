@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { Button, Card } from '@/components/ui';
-import { ping } from '@/lib/api';
+import { Card } from '@/components/ui';
 import { bubbleAvailable, disableBubble, enableBubble, isBubbleRunning, syncBubble } from '@/lib/bubble';
 import { getSettings, saveSettings, type ThemePreference } from '@/lib/settings';
 import { applyThemePreference, useTheme } from '@/lib/theme';
@@ -15,15 +14,12 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 
 export default function SettingsScreen() {
   const t = useTheme();
-  const [apiUrl, setApiUrl] = useState('');
   const [autoSave, setAutoSave] = useState(true);
-  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [bubble, setBubble] = useState(isBubbleRunning);
   const [theme, setTheme] = useState<ThemePreference>('system');
 
   useEffect(() => {
     getSettings().then((s) => {
-      setApiUrl(s.apiUrl);
       setAutoSave(s.autoSaveToGallery);
       setTheme(s.theme);
     });
@@ -58,39 +54,8 @@ export default function SettingsScreen() {
     saveSettings({ theme: pref });
   }
 
-  async function test() {
-    setStatus('testing');
-    const saved = await saveSettings({ apiUrl });
-    setApiUrl(saved.apiUrl);
-    setStatus((await ping(saved.apiUrl)) ? 'ok' : 'fail');
-  }
-
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Card>
-        <Text style={[styles.label, { color: t.muted }]}>Servidor</Text>
-        <TextInput
-          value={apiUrl}
-          onChangeText={(v) => {
-            setApiUrl(v);
-            setStatus('idle');
-          }}
-          placeholder="https://igsaver-server.onrender.com"
-          placeholderTextColor={t.muted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.bg }]}
-        />
-        <Button label="Salvar e testar" icon="pulse-outline" onPress={test} loading={status === 'testing'} />
-        {status === 'ok' ? <Text style={[styles.status, { color: t.success }]}>Conectado ao servidor.</Text> : null}
-        {status === 'fail' ? (
-          <Text style={[styles.status, { color: t.danger }]}>
-            Sem resposta. Use o IP do computador na rede local (não localhost) e confira se o servidor está rodando.
-          </Text>
-        ) : null}
-      </Card>
-
+    <ScrollView contentContainerStyle={styles.container}>
       <Card>
         <Text style={[styles.label, { color: t.muted }]}>Aparência</Text>
         <View style={[styles.segmented, { backgroundColor: t.bg, borderColor: t.border }]}>
@@ -134,8 +99,8 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Balão flutuante</Text>
               <Text style={{ color: t.muted, fontSize: 13, marginTop: 2, lineHeight: 18 }}>
-                Fica sobre os outros apps. Copie um link do Instagram e toque no balão para abrir aqui. Segure o balão para
-                fechá-lo.
+                Fica sobre os outros apps. Copie um link do Instagram e toque no balão para baixar. Segure o balão para
+                deixá-lo quase transparente; um toque traz de volta. Para fechar, desligue aqui ou use a notificação.
               </Text>
             </View>
             <Switch value={bubble} trackColor={{ true: t.accent }} onValueChange={toggleBubble} />
@@ -153,8 +118,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: { padding: 16, gap: 16 },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, marginBottom: 12 },
-  status: { marginTop: 12, fontSize: 14, lineHeight: 20 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   segmented: { flexDirection: 'row', borderWidth: 1, borderRadius: 12, padding: 4, gap: 4 },
   segment: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 9 },

@@ -15,26 +15,28 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import kotlin.math.abs
 
 /**
  * Serviço em primeiro plano que mantém a bolha sobre os outros apps.
- * Tocar na bolha abre a [ClipboardActivity]; segurar fecha a bolha;
- * arrastar até a borda de baixo esconde parte dela (um toque traz de volta).
+ * Tocar na bolha abre a [ClipboardActivity]; segurar a deixa quase transparente
+ * e arrastar até a borda de baixo esconde parte dela (nos dois casos, um toque
+ * traz de volta). Fechar é pela notificação ou pela chave em Ajustes.
  */
 class BubbleService : Service() {
   private lateinit var windowManager: WindowManager
   private var bubble: View? = null
   private var tucked = false
+  private var faded = false
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -127,10 +129,14 @@ class BubbleService : Service() {
     var touchX = 0f
     var touchY = 0f
     var dragging = false
-    val closeOnHold = Runnable {
+    var held = false
+    // Segurar deixa a bolha quase transparente (para não tapar o app); um toque traz de volta.
+    val fadeOnHold = Runnable {
       if (!dragging) {
-        Toast.makeText(this, "Balão fechado", Toast.LENGTH_SHORT).show()
-        stopSelf()
+        held = true
+        faded = true
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        updateAlpha(view)
       }
     }
 
@@ -142,14 +148,15 @@ class BubbleService : Service() {
           touchX = event.rawX
           touchY = event.rawY
           dragging = false
-          if (!tucked) v.postDelayed(closeOnHold, longPress * 2)
+          held = false
+          if (!tucked && !faded) v.postDelayed(fadeOnHold, longPress)
         }
         MotionEvent.ACTION_MOVE -> {
           val dx = event.rawX - touchX
           val dy = event.rawY - touchY
           if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
             dragging = true
-            v.removeCallbacks(closeOnHold)
+            v.removeCallbacks(fadeOnHold)
             setTucked(v, false)
           }
           if (dragging) {
@@ -159,15 +166,20 @@ class BubbleService : Service() {
           }
         }
         MotionEvent.ACTION_UP -> {
-          v.removeCallbacks(closeOnHold)
+          v.removeCallbacks(fadeOnHold)
           when {
             dragging && params.y + v.height > screenHeight() - v.height / 2 -> tuck(v, params)
             dragging -> snapToEdge(v, params)
+            held -> Unit
+            faded -> {
+              faded = false
+              updateAlpha(v)
+            }
             tucked -> untuck(v, params)
             running -> openClipboard()
           }
         }
-        MotionEvent.ACTION_CANCEL -> v.removeCallbacks(closeOnHold)
+        MotionEvent.ACTION_CANCEL -> v.removeCallbacks(fadeOnHold)
       }
       true
     }
@@ -206,8 +218,17 @@ class BubbleService : Service() {
 
   private fun setTucked(view: View, value: Boolean) {
     tucked = value
-    view.animate().alpha(if (value) 0.6f else 1f).setDuration(180).start()
+    updateAlpha(view)
     view.contentDescription = if (value) "Mostrar balão" else "Baixar link copiado do Instagram"
+  }
+
+  private fun updateAlpha(view: View) {
+    val alpha = when {
+      faded -> FADED_ALPHA
+      tucked -> 0.6f
+      else -> 1f
+    }
+    view.animate().alpha(alpha).setDuration(180).start()
   }
 
   private fun animateY(view: View, params: WindowManager.LayoutParams, target: Int) {
@@ -249,6 +270,8 @@ class BubbleService : Service() {
     private const val BUBBLE_COLOR = 0xFF5B3DF5.toInt()
     // Fração da bolha que continua visível quando escondida embaixo.
     private const val TUCKED_VISIBLE = 0.4f
+    // Bolha "translúcida" depois de segurar: quase invisível, mas ainda dá para achá-la e tocar.
+    private const val FADED_ALPHA = 0.15f
 
     fun saveScheme(context: Context, scheme: String) {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("scheme", scheme).apply()

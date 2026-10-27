@@ -1,4 +1,3 @@
-import { getSettings } from './settings';
 
 export type MediaItem = {
   index: number;
@@ -46,12 +45,11 @@ export function extractInstagramUrl(text: string | null | undefined): string | n
   return user ? `https://www.instagram.com/${type.toLowerCase() === 'reels' ? 'reel' : type.toLowerCase()}/${code}/` : link;
 }
 
-async function base() {
-  return (await getSettings()).apiUrl;
-}
+// Endereço fixo do servidor (definido no projeto, não muda pelo app).
+const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'https://igsaver-server.onrender.com').replace(/\/+$/, '');
 
 export async function fetchInfo(url: string, signal?: AbortSignal): Promise<PostInfo> {
-  const endpoint = `${await base()}/api/info?url=${encodeURIComponent(url)}`;
+  const endpoint = `${API_URL}/api/info?url=${encodeURIComponent(url)}`;
   let res: Response;
   try {
     res = await fetch(endpoint, { signal });
@@ -69,16 +67,5 @@ export async function fetchInfo(url: string, signal?: AbortSignal): Promise<Post
 
 export async function downloadUrl(url: string, item: MediaItem) {
   const type = item.type === 'image' ? '&type=image' : '';
-  return `${await base()}/api/download?url=${encodeURIComponent(url)}&index=${item.index}${type}`;
-}
-
-export async function ping(apiUrl?: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${(apiUrl ?? (await base())).replace(/\/+$/, '')}/health`);
-    if (!res.ok) console.log('[api] health respondeu', res.status);
-    return res.ok;
-  } catch (e) {
-    console.log('[api] falha de conexão no health', e);
-    return false;
-  }
+  return `${API_URL}/api/download?url=${encodeURIComponent(url)}&index=${item.index}${type}`;
 }

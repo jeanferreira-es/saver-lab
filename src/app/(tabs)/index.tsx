@@ -303,7 +303,7 @@ function progressLabel(state: Downloading) {
 function friendlyError(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
   if (/Network request failed|Failed to fetch/i.test(msg)) {
-    return 'Não consegui falar com o servidor. Confira o endereço em Ajustes e se o celular está na mesma rede.';
+    return 'Não consegui falar com o servidor. Confira a conexão com a internet e tente de novo.';
   }
   if (/login|cookies|rate-limit|empty media/i.test(msg)) {
     return 'O Instagram pediu login para este conteúdo. Configure IG_COOKIES no servidor (veja o README).';

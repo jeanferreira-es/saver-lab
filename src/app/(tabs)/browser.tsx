@@ -34,7 +34,7 @@ import {
 import { cachedPost, rememberPost } from '@/lib/post-cache';
 import { recordPost, recordVisit } from '@/lib/profiles';
 import { captureSession, getSession, loginAvailable } from '@/lib/session';
-import { useTheme } from '@/lib/theme';
+import { useColorScheme, useTheme } from '@/lib/theme';
 import { cachedStories, rememberReel } from '@/lib/story-cache';
 import { rememberUserIds } from '@/lib/user-ids';
 
@@ -263,6 +263,12 @@ export default function BrowserScreen() {
 
   // Nos stories, deslizar para baixo fecha o story no próprio site: não pode recarregar.
   const canRefresh = !onStory;
+  const scheme = useColorScheme();
+  const pageBackground = onStory ? STORY_BG : t.bg;
+  // No tema escuro, pinta o fundo da página antes do CSS do site chegar: sem clarão branco ao carregar.
+  const injected =
+    (scheme === 'dark' ? `document.documentElement.style.backgroundColor = ${JSON.stringify(pageBackground)};\n` : '') +
+    OBSERVER_SCRIPT;
 
   function refresh() {
     setRefreshing(true);
@@ -279,7 +285,7 @@ export default function BrowserScreen() {
       pullToRefreshEnabled={canRefresh}
       nestedScrollEnabled
       onScroll={({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => setAtTop(nativeEvent.contentOffset.y <= 0)}
-      injectedJavaScriptBeforeContentLoaded={OBSERVER_SCRIPT}
+      injectedJavaScriptBeforeContentLoaded={injected}
       onNavigationStateChange={onNavigation}
       onLoadEnd={() => {
         setLoading(false);
@@ -302,7 +308,8 @@ export default function BrowserScreen() {
           if (url) download(url);
         }
       }}
-      style={{ flex: 1 }}
+      // Fundo nativo da WebView (branco por padrão) até a página pintar o primeiro quadro.
+      style={{ flex: 1, backgroundColor: pageBackground }}
     />
   );
 
