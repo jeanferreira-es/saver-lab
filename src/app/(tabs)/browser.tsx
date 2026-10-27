@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,6 +38,8 @@ import { useTheme } from '@/lib/theme';
 import { cachedStories, rememberReel } from '@/lib/story-cache';
 import { rememberUserIds } from '@/lib/user-ids';
 
+const STORY_BG = '#000000';
+
 type Grab = { url: string; status: 'loading' | 'ready' | 'error'; post?: PostInfo; message?: string };
 
 export default function BrowserScreen() {
@@ -54,6 +57,34 @@ export default function BrowserScreen() {
   const [storyMedia, setStoryMedia] = useState<string | null>(null);
   // Post do feed mais visível na tela (sem precisar abrir nem copiar o link).
   const [visible, setVisible] = useState<string | null>(null);
+  const navigation = useNavigation();
+  const [focused, setFocused] = useState(false);
+  // Story aberto: tela escura de ponta a ponta, como no Instagram.
+  const onStory = Boolean(parseStoryUrl(current));
+
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
+  // A barra de abas segue as opções da aba em foco: escurece só enquanto o story está na tela.
+  useEffect(() => {
+    navigation.setOptions(
+      onStory
+        ? {
+            tabBarStyle: { backgroundColor: STORY_BG, borderTopColor: STORY_BG },
+            tabBarActiveTintColor: '#FFFFFF',
+            tabBarInactiveTintColor: '#8E8E93',
+          }
+        : {
+            tabBarStyle: { backgroundColor: t.card, borderTopColor: t.border },
+            tabBarActiveTintColor: t.accent,
+            tabBarInactiveTintColor: t.muted,
+          },
+    );
+  }, [navigation, onStory, t]);
   const [grab, setGrab] = useState<Grab | null>(null);
   const [selecting, setSelecting] = useState(false);
   // Puxar para atualizar (Android): só com a página no topo, senão rolar para cima recarregaria.
@@ -231,7 +262,7 @@ export default function BrowserScreen() {
   }
 
   // Nos stories, deslizar para baixo fecha o story no próprio site: não pode recarregar.
-  const canRefresh = !parseStoryUrl(current);
+  const canRefresh = !onStory;
 
   function refresh() {
     setRefreshing(true);
@@ -276,7 +307,9 @@ export default function BrowserScreen() {
   );
 
   return (
-    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: t.bg }}>
+    <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: onStory ? STORY_BG : t.bg }}>
+      {/* Só com a aba em foco: as abas ficam montadas, e a status bar não pode vazar para elas. */}
+      {focused && onStory ? <StatusBar style="light" /> : null}
       {Platform.OS === 'android' ? (
         <ScrollView
           contentContainerStyle={{ flex: 1 }}

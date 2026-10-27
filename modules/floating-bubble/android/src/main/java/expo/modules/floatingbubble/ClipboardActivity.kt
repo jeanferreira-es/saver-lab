@@ -26,9 +26,12 @@ class ClipboardActivity : Activity() {
     val text = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
     val link = AppLink.find(text)
 
-    // Abre o app na aba Baixar já com o link.
-    if (link == null || !AppLink.open(this, link)) {
-      Toast.makeText(this, "Nenhum link do Instagram copiado", Toast.LENGTH_SHORT).show()
+    when {
+      // Post: escolha dos itens por cima do app em uso, sem trazer o Saver Lab para frente.
+      link != null && AppLink.isPost(link) -> OverlayActivity.open(this, link)
+      // Story precisa da sessão da aba Navegar: abre o app.
+      link != null && AppLink.open(this, link) -> Unit
+      else -> Toast.makeText(this, "Nenhum link do Instagram copiado", Toast.LENGTH_SHORT).show()
     }
     finish()
     overridePendingTransition(0, 0)

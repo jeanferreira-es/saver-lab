@@ -50,19 +50,24 @@ export function useDownloadStates() {
 
 /**
  * Inicia o download de um item sem bloquear quem chamou. Chamadas repetidas
- * para um item que já está baixando são ignoradas.
+ * para um item que já está baixando são ignoradas. A promessa diz se deu certo
+ * (nunca rejeita; o erro também fica no estado do item).
  */
-export function startDownload(post: PostInfo, item: MediaItem) {
+export function startDownload(post: PostInfo, item: MediaItem): Promise<boolean> {
   const key = entryKey(post, item);
-  if (states[key]?.status === 'downloading') return;
+  if (states[key]?.status === 'downloading') return Promise.resolve(true);
   setState(key, { status: 'downloading', bytesWritten: 0, totalBytes: null });
-  downloadItem(post, item, (bytesWritten, totalBytes) =>
+  return downloadItem(post, item, (bytesWritten, totalBytes) =>
     setState(key, { status: 'downloading', bytesWritten, totalBytes }),
   )
-    .then(() => setState(key, null))
+    .then(() => {
+      setState(key, null);
+      return true;
+    })
     .catch((error) => {
       console.log('[download] erro ao baixar item', key, error);
       setState(key, { status: 'error', error });
+      return false;
     });
 }
 

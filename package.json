@@ -1,7 +1,7 @@
 {
   "name": "igsaver",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@preeternal/react-native-cookie-manager": "^7.0.0",

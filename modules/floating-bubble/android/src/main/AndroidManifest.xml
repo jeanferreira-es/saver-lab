@@ -24,6 +24,17 @@
       android:launchMode="singleInstance"
       android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+    <!-- Escolha dos itens de um post por cima do app em uso (aberta pela bolha). -->
+    <activity
+      android:name=".OverlayActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:taskAffinity="${applicationId}.overlay"
+      android:launchMode="singleTask"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+      android:windowSoftInputMode="adjustResize"
+      android:theme="@style/SaverLabOverlayTheme" />
+
     <!-- Coloca o app na lista de "Compartilhar" para links: abre a aba Baixar com o link. -->
     <activity
       android:name=".ShareActivity"

@@ -8,6 +8,8 @@ type FloatingBubbleModule = {
   start(scheme: string): void;
   /** Guarda o esquema de deep link usado pelo "Compartilhar" (sem precisar da bolha). */
   setScheme(scheme: string): void;
+  /** Fecha a escolha de itens aberta pela bolha por cima de outro app. */
+  closeOverlay(): void;
   stop(): void;
   isRunning(): boolean;
 };

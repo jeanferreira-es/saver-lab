@@ -13,6 +13,11 @@ object AppLink {
     RegexOption.IGNORE_CASE,
   )
 
+  private val POST_URL = Regex("""instagram\.com/([\w.]+/)?(p|reel|reels|tv)/""", RegexOption.IGNORE_CASE)
+
+  /** Post, reel ou IGTV (o resto são stories). */
+  fun isPost(link: String): Boolean = POST_URL.containsMatchIn(link)
+
   /** Primeiro link de post/reel/IGTV/story no texto, se houver. */
   fun find(text: String?): String? = text?.let { INSTAGRAM_URL.find(it)?.value }
 

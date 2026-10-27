@@ -41,6 +41,11 @@ class FloatingBubbleModule : Module() {
       BubbleService.saveScheme(context, scheme)
     }
 
+    // Fecha a escolha de itens aberta pela bolha por cima de outro app.
+    Function("closeOverlay") {
+      OverlayActivity.close()
+    }
+
     Function("stop") {
       context.stopService(Intent(context, BubbleService::class.java))
     }
