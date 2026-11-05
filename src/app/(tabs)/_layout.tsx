@@ -28,9 +28,17 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="browser"
         options={{
-          title: 'Navegar',
+          title: 'Instagram',
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <Ionicons name="compass-outline" color={color as string} size={size} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="logo-instagram" color={color as string} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="threads"
+        options={{
+          title: 'Threads',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="at" color={color as string} size={size} />,
         }}
       />
       <Tabs.Screen

@@ -1,16 +1,10 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
   StyleSheet,
-  Text,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -18,14 +12,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 
+import { DownloadPill, useDownloadedItems, type Grab } from '@/components/download-pill';
 import { InstagramBridge, type InstagramBridgeHandle } from '@/components/instagram-bridge';
 import { SelectItemsModal } from '@/components/select-items-modal';
-import { extractInstagramUrl, fetchInfo, type MediaItem, type PostInfo } from '@/lib/api';
-import { entryKey, startDownload, useDownloadStates } from '@/lib/downloader';
-import { getEntry, useHistory } from '@/lib/history';
+import { WebViewRefresh } from '@/components/webview-refresh';
+import { extractInstagramUrl, fetchInfo, type MediaItem } from '@/lib/api';
+import { entryKey, startDownload } from '@/lib/downloader';
+import { getEntry } from '@/lib/history';
 import {
   INSTAGRAM_HOME,
   OBSERVER_SCRIPT,
+  paintBackgroundScript,
   parseStoryUrl,
   parseWebMessage,
   reelKey,
@@ -40,15 +37,11 @@ import { rememberUserIds } from '@/lib/user-ids';
 
 const STORY_BG = '#000000';
 
-type Grab = { url: string; status: 'loading' | 'ready' | 'error'; post?: PostInfo; message?: string };
-
 export default function BrowserScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const webview = useRef<WebView<object>>(null);
   const bridge = useRef<InstagramBridgeHandle>(null);
-  const history = useHistory();
-  const downloads = useDownloadStates();
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
   // Post (ou conjunto de stories) aberto na WebView no momento (detectado pela URL).
@@ -211,64 +204,15 @@ export default function BrowserScreen() {
 
   const target = grab?.url ?? current ?? visible;
   const post = grab?.post;
-  const downloaded = new Set(
-    post ? post.items.filter((i) => history.some((h) => h.key === entryKey(post, i))).map((i) => i.index) : [],
-  );
+  const downloaded = useDownloadedItems(post);
   // Na escolha de stories, já vem marcado só o que está na tela.
   const currentStory = post?.kind === 'story' ? post.items.find((i) => i.id === storyMedia) : undefined;
-  const failure = post?.items.map((i) => downloads[entryKey(post, i)]).find((s) => s?.status === 'error');
-  const failed = Boolean(failure);
-  // Motivo do erro visível no botão: sem ele não dá para saber o que o Instagram recusou.
-  const errorDetail =
-    grab?.status === 'error'
-      ? grab.message
-      : failure?.status === 'error'
-        ? failure.error instanceof Error
-          ? failure.error.message
-          : String(failure.error)
-        : null;
-  const active = post?.items.map((i) => downloads[entryKey(post, i)]).filter((s) => s?.status === 'downloading') ?? [];
-  const progress = active.length
-    ? active.reduce((sum, s) => sum + (s?.status === 'downloading' && s.totalBytes ? s.bytesWritten / s.totalBytes : 0), 0) /
-      active.length
-    : null;
-
-  let label = parseStoryUrl(target) ? 'Baixar story' : 'Baixar este post';
-  let icon: 'download-outline' | 'checkmark-circle' | 'alert-circle' | 'checkbox-outline' = 'download-outline';
-  if (grab?.status === 'loading') label = 'Buscando…';
-  else if (grab?.status === 'error') {
-    label = 'Erro — tocar para tentar de novo';
-    icon = 'alert-circle';
-  } else if (failed && !active.length) {
-    label = 'Falha no download — tocar para tentar de novo';
-    icon = 'alert-circle';
-  } else if (active.length) label = progress ? `Baixando… ${Math.round(progress * 100)}%` : 'Baixando…';
-  else if (post && post.items.length > 1) {
-    label = `Escolher itens (${post.items.length})`;
-    icon = 'checkbox-outline';
-  } else if (post && downloaded.size) {
-    label = 'Baixado — abrir';
-    icon = 'checkmark-circle';
-  }
-
-  function onPill() {
-    if (!target) return;
-    if (post && post.items.length > 1 && grab?.status === 'ready' && !failed) return setSelecting(true);
-    if (post && downloaded.size && !active.length) {
-      const entry = getEntry(entryKey(post, post.items[0]));
-      if (entry) return router.push({ pathname: '/player/[key]', params: { key: entry.key } });
-    }
-    if (grab?.status !== 'loading' && !active.length) download(target);
-  }
 
   // Nos stories, deslizar para baixo fecha o story no próprio site: não pode recarregar.
   const canRefresh = !onStory;
   const scheme = useColorScheme();
   const pageBackground = onStory ? STORY_BG : t.bg;
-  // No tema escuro, pinta o fundo da página antes do CSS do site chegar: sem clarão branco ao carregar.
-  const injected =
-    (scheme === 'dark' ? `document.documentElement.style.backgroundColor = ${JSON.stringify(pageBackground)};\n` : '') +
-    OBSERVER_SCRIPT;
+  const injected = OBSERVER_SCRIPT + (scheme === 'dark' ? paintBackgroundScript(pageBackground) : '');
 
   function refresh() {
     setRefreshing(true);
@@ -317,24 +261,9 @@ export default function BrowserScreen() {
     <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: onStory ? STORY_BG : t.bg }}>
       {/* Só com a aba em foco: as abas ficam montadas, e a status bar não pode vazar para elas. */}
       {focused && onStory ? <StatusBar style="light" /> : null}
-      {Platform.OS === 'android' ? (
-        <ScrollView
-          contentContainerStyle={{ flex: 1 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={refresh}
-              enabled={canRefresh && atTop}
-              colors={[t.accent]}
-              progressBackgroundColor={t.card}
-            />
-          }
-        >
-          {browser}
-        </ScrollView>
-      ) : (
-        browser
-      )}
+      <WebViewRefresh refreshing={refreshing} onRefresh={refresh} enabled={canRefresh && atTop}>
+        {browser}
+      </WebViewRefresh>
 
       {loading ? (
         <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
@@ -343,31 +272,13 @@ export default function BrowserScreen() {
       ) : null}
 
       {target ? (
-        <Pressable
-          onPress={onPill}
-          style={({ pressed }) => [
-            styles.pill,
-            { backgroundColor: grab?.status === 'error' || failed ? t.danger : t.accent, opacity: pressed ? 0.85 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={label}
-        >
-          {grab?.status === 'loading' || active.length ? (
-            <ActivityIndicator color={t.accentText} />
-          ) : (
-            <Ionicons name={icon} size={20} color={t.accentText} />
-          )}
-          <View style={{ flexShrink: 1 }}>
-            <Text style={[styles.pillText, { color: t.accentText }]} numberOfLines={1}>
-              {label}
-            </Text>
-            {errorDetail ? (
-              <Text style={[styles.pillDetail, { color: t.accentText }]} numberOfLines={2}>
-                {errorDetail}
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
+        <DownloadPill
+          target={target}
+          grab={grab}
+          idleLabel={parseStoryUrl(target) ? 'Baixar story' : 'Baixar este post'}
+          onDownload={download}
+          onSelect={() => setSelecting(true)}
+        />
       ) : null}
 
       <InstagramBridge ref={bridge} />
@@ -388,23 +299,4 @@ export default function BrowserScreen() {
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
-  pill: {
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-    maxWidth: '90%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    minHeight: 48,
-    borderRadius: 24,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  pillText: { fontSize: 15, fontWeight: '600' },
-  pillDetail: { fontSize: 12, opacity: 0.85, marginTop: 1 },
 });

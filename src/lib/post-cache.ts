@@ -1,5 +1,6 @@
 import type { MediaItem, PostInfo } from './api';
 import type { CapturedPost } from './instagram-web';
+import { THREADS_HOME, threadsCode } from './threads-web';
 
 // O feed traz muitos posts: guarda só os mais recentes.
 const MAX = 300;
@@ -21,7 +22,28 @@ export function rememberPost(post: CapturedPost) {
 export function cachedPost(url: string): PostInfo | null {
   const code = url.match(CODE)?.[1];
   const post = code ? posts.get(code) : undefined;
+  // O código do link: o mesmo id que o servidor usa, para o histórico reconhecer o post.
+  return post ? toPostInfo(post, `https://www.instagram.com/p/${post.code}/`, post.code) : null;
+}
+
+const threadsPosts = new Map<string, CapturedPost>();
+
+/** Mesmo cache para a aba Threads: separado, porque os códigos não identificam o site de origem. */
+export function rememberThreadsPost(post: CapturedPost) {
+  threadsPosts.delete(post.code);
+  threadsPosts.set(post.code, post);
+  if (threadsPosts.size > MAX) threadsPosts.delete(threadsPosts.keys().next().value!);
+}
+
+export function cachedThreadsPost(url: string | null | undefined): PostInfo | null {
+  const code = threadsCode(url);
+  const post = code ? threadsPosts.get(code) : undefined;
   if (!post) return null;
+  const link = post.username ? `${THREADS_HOME}@${post.username}/post/${post.code}` : `${THREADS_HOME}t/${post.code}`;
+  return toPostInfo(post, link, `threads-${post.code}`);
+}
+
+function toPostInfo(post: CapturedPost, url: string, id: string): PostInfo {
   const items: MediaItem[] = post.items.map((item, i) => ({
     index: i + 1,
     id: item.pk,
@@ -34,9 +56,8 @@ export function cachedPost(url: string): PostInfo | null {
     src: item.video ?? item.image,
   }));
   return {
-    url: `https://www.instagram.com/p/${post.code}/`,
-    // O código do link: o mesmo id que o servidor usa, para o histórico reconhecer o post.
-    id: post.code,
+    url,
+    id,
     title: post.caption || 'Post',
     caption: post.caption ?? '',
     author: post.fullName || post.username || null,

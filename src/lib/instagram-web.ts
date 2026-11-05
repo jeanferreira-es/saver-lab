@@ -30,7 +30,8 @@ export function parseWebMessage(data: string): WebMessage | null {
  * carregou. O story na tela já veio com a sessão do usuário: reaproveitá-lo
  * evita consultas extras (que o Instagram limita ou recusa).
  */
-export const OBSERVER_SCRIPT = `
+export function observerScript(visibleLink: string) {
+  return `
 (function () {
   if (window.__saverLab) return;
   window.__saverLab = true;
@@ -170,33 +171,10 @@ export const OBSERVER_SCRIPT = `
     });
     return originalSend.apply(this, arguments);
   };
-  // Post do feed mais visível na tela: cada post é um <article> com o link dele.
-  var POST_TYPES = { p: 'p', reel: 'reel', reels: 'reel', tv: 'tv' };
-  function postLink(article) {
-    var links = article.querySelectorAll('a[href]');
-    for (var i = 0; i < links.length; i++) {
-      var parts = links[i].pathname.split('/').filter(Boolean);
-      for (var j = 0; j < parts.length - 1; j++) {
-        if (POST_TYPES[parts[j]] && parts[j + 1] !== 'audio') {
-          return location.origin + '/' + POST_TYPES[parts[j]] + '/' + parts[j + 1] + '/';
-        }
-      }
-    }
-    return null;
-  }
+  ${visibleLink}
   var visible;
   function findVisible() {
-    var articles = document.querySelectorAll('article');
-    var height = window.innerHeight;
-    var best = null;
-    var bestArea = 0;
-    for (var i = 0; i < articles.length; i++) {
-      var r = articles[i].getBoundingClientRect();
-      var area = Math.min(r.bottom, height) - Math.max(r.top, 0);
-      if (area > bestArea) { bestArea = area; best = articles[i]; }
-    }
-    // Só conta se o post ocupar uma parte razoável da tela.
-    var link = best && bestArea > height * 0.25 ? postLink(best) : null;
+    var link = visibleLink();
     if (link !== visible) { visible = link; send('visible', link); }
   }
   var scheduled = false;
@@ -219,6 +197,59 @@ export const OBSERVER_SCRIPT = `
 })();
 true;
 `;
+}
+
+// Post do feed mais visível na tela: cada post é um <article> com o link dele.
+const INSTAGRAM_VISIBLE_LINK = `
+  var POST_TYPES = { p: 'p', reel: 'reel', reels: 'reel', tv: 'tv' };
+  function postLink(article) {
+    var links = article.querySelectorAll('a[href]');
+    for (var i = 0; i < links.length; i++) {
+      var parts = links[i].pathname.split('/').filter(Boolean);
+      for (var j = 0; j < parts.length - 1; j++) {
+        if (POST_TYPES[parts[j]] && parts[j + 1] !== 'audio') {
+          return location.origin + '/' + POST_TYPES[parts[j]] + '/' + parts[j + 1] + '/';
+        }
+      }
+    }
+    return null;
+  }
+  function visibleLink() {
+    var articles = document.querySelectorAll('article');
+    var height = window.innerHeight;
+    var best = null;
+    var bestArea = 0;
+    for (var i = 0; i < articles.length; i++) {
+      var r = articles[i].getBoundingClientRect();
+      var area = Math.min(r.bottom, height) - Math.max(r.top, 0);
+      if (area > bestArea) { bestArea = area; best = articles[i]; }
+    }
+    // Só conta se o post ocupar uma parte razoável da tela.
+    return best && bestArea > height * 0.25 ? postLink(best) : null;
+  }
+`;
+
+export const OBSERVER_SCRIPT = observerScript(INSTAGRAM_VISIBLE_LINK);
+
+/**
+ * Pinta o fundo da página antes do CSS do site chegar: sem clarão branco ao carregar.
+ * Vem depois do observador e nunca lança erro: no Android o script roda no início da navegação,
+ * quando a página nova pode ainda não ter <html>, e um erro aqui derrubaria o observador junto.
+ */
+export function paintBackgroundScript(color: string) {
+  return `
+(function () {
+  function paint() {
+    try {
+      if (document.documentElement) document.documentElement.style.backgroundColor = ${JSON.stringify(color)};
+    } catch (e) {}
+  }
+  paint();
+  document.addEventListener('readystatechange', paint);
+})();
+true;
+`;
+}
 
 export type StoryReel = { username: string } | { highlightId: string };
 

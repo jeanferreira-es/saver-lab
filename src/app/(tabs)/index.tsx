@@ -14,11 +14,12 @@ import { parseStoryUrl, storyPageUrl } from '@/lib/instagram-web';
 import { cachedPost } from '@/lib/post-cache';
 import { recordPost } from '@/lib/profiles';
 import { useTheme } from '@/lib/theme';
+import { extractThreadsUrl } from '@/lib/threads-web';
 
-/** Link de post/reel/IGTV ou a página de um story, se o texto tiver um. */
+/** Link de post/reel/IGTV, a página de um story ou um post do Threads, se o texto tiver um. */
 function linkFrom(text: string) {
   const story = parseStoryUrl(text);
-  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null);
+  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null) ?? extractThreadsUrl(text);
 }
 
 export default function DownloadScreen() {
@@ -35,7 +36,7 @@ export default function DownloadScreen() {
   const dismissed = useRef<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
-  // Ao voltar para a tela, verifica se há um link do Instagram copiado.
+  // Ao voltar para a tela, verifica se há um link copiado.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -60,6 +61,15 @@ export default function DownloadScreen() {
 
   async function search(raw = input) {
     Keyboard.dismiss();
+    // O Threads não passa pelo servidor: abre na aba dele, que baixa sozinha ao carregar.
+    const threads = extractThreadsUrl(raw);
+    if (threads) {
+      setInput('');
+      setClipboardUrl(null);
+      setError(null);
+      router.navigate({ pathname: '/threads', params: { url: threads, t: String(Date.now()) } });
+      return;
+    }
     // Stories só baixam com a sessão do site: abre na aba Navegar, que baixa sozinha ao carregar.
     const story = parseStoryUrl(raw);
     if (story && !extractInstagramUrl(raw)) {
@@ -71,7 +81,7 @@ export default function DownloadScreen() {
     }
     const url = extractInstagramUrl(raw);
     if (!url) {
-      setError('Cole um link de post, reel, IGTV ou story (ex.: instagram.com/reel/...).');
+      setError('Cole um link do Instagram (post, reel, IGTV ou story) ou um post do Threads.');
       return;
     }
     setInput(url);
@@ -149,7 +159,7 @@ export default function DownloadScreen() {
         ) : null}
 
         <Card>
-          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram</Text>
+          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram ou Threads</Text>
           <TextInput
             value={input}
             onChangeText={setInput}
@@ -279,7 +289,7 @@ export default function DownloadScreen() {
 
         {!post && !loading ? (
           <Text style={[styles.hint, { color: t.muted }]}>
-            No Instagram, toque em ··· › Copiar link e volte para cá. Funciona com fotos, reels e carrosséis públicos.
+            No Instagram ou no Threads, copie o link do post e volte para cá. Funciona com fotos, vídeos e carrosséis públicos.
           </Text>
         ) : null}
       </ScrollView>
