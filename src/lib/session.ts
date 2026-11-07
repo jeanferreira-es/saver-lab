@@ -67,6 +67,12 @@ export async function captureSession(): Promise<boolean> {
   return true;
 }
 
+/** Valor de um cookie que a WebView recebeu de um site (inclusive HttpOnly, que a página não enxerga). */
+export async function webViewCookie(url: string, name: string): Promise<string | null> {
+  const cookies = await cookieManager().get(url, { iosCookieStore: 'webKit' });
+  return cookies[name]?.value ?? null;
+}
+
 export async function logout() {
   session = null;
   emit();

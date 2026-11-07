@@ -29,11 +29,15 @@ export function parseWebMessage(data: string): WebMessage | null {
  * quais ids de usuário e stories apareceram nos dados que o próprio site
  * carregou. O story na tela já veio com a sessão do usuário: reaproveitá-lo
  * evita consultas extras (que o Instagram limita ou recusa).
+ *
+ * `marker` é um texto que só as respostas com dados úteis têm (evita analisar as demais) e
+ * `capture` define `captureSite(v)`, chamada em cada objeto, para sites com outro formato de dados.
  */
-export function observerScript(visibleLink: string) {
+export function observerScript(visibleLink: string, { marker = '"username"', capture = 'function captureSite() {}' } = {}) {
   return `
 (function () {
-  if (window.__saverLab) return;
+  // Iframes (about:blank e afins) não são a página: reportariam a URL errada ao app.
+  if (window.__saverLab || window !== window.top) return;
   window.__saverLab = true;
   function send(type, value) {
     window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, value: value }));
@@ -133,6 +137,7 @@ export function observerScript(visibleLink: string) {
     send('reel', { key: key, reel: { id: id || undefined, user: { username: user.username, full_name: user.full_name }, items: items } });
   }
 
+  ${capture}
   var known = {};
   var found = null;
   function collect(v, depth) {
@@ -144,20 +149,25 @@ export function observerScript(visibleLink: string) {
       if (!found) { found = {}; setTimeout(function () { send('user-ids', found); found = null; }, 1000); }
       found[v.username] = String(id);
     }
+    captureSite(v);
     if (Array.isArray(v.items) && v.items.some(isStory)) captureReel(v);
     if (typeof v.code === 'string' && !v.carousel_parent_id && !isStory(v) &&
         (v.carousel_media || v.video_versions || v.image_versions2)) capturePost(v);
     for (var k in v) if (v[k] && typeof v[k] === 'object') collect(v[k], depth + 1);
   }
   function inspect(text) {
-    if (typeof text !== 'string' || text.indexOf('"username"') < 0) return;
+    if (typeof text !== 'string' || text.indexOf(${JSON.stringify(marker)}) < 0) return;
     // Algumas respostas vêm em várias linhas de JSON.
     text.split('\\n').forEach(function (line) { try { collect(JSON.parse(line), 0); } catch (e) {} });
   }
   var originalFetch = window.fetch;
   window.fetch = function () {
     return originalFetch.apply(this, arguments).then(function (r) {
-      try { r.clone().text().then(inspect, function () {}); } catch (e) {}
+      // Vídeo baixado por fetch (player do site): copiar para ler como texto só gastaria memória.
+      var type = r.headers.get('content-type') || '';
+      if (!/^(video|audio|image)\\//.test(type)) {
+        try { r.clone().text().then(inspect, function () {}); } catch (e) {}
+      }
       return r;
     });
   };
@@ -189,9 +199,11 @@ export function observerScript(visibleLink: string) {
   setInterval(findVisible, 1500);
 
   // Dados que já vêm embutidos no HTML da página.
-  document.addEventListener('DOMContentLoaded', function () {
+  function inspectEmbedded() {
     document.querySelectorAll('script[type="application/json"]').forEach(function (s) { inspect(s.textContent); });
-  });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inspectEmbedded);
+  else inspectEmbedded();
 
   report();
 })();

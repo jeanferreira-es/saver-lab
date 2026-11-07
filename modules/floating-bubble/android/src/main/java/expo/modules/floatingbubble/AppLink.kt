@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 
-/** Abre o app na aba Baixar com um link do Instagram (usado pela bolha e pelo compartilhar). */
+/** Abre o app na aba Baixar com um link do Instagram ou do TikTok (usado pela bolha e pelo compartilhar). */
 object AppLink {
   // Posts, reels, IGTV, stories (`/stories/<usuário>/<id>`, `/stories/highlights/<id>`)
   // e destaques compartilhados pelo app oficial (`/s/<código>?story_media_id=...`).
@@ -13,13 +13,19 @@ object AppLink {
     RegexOption.IGNORE_CASE,
   )
 
+  // Vídeos e fotos, inclusive os links curtos que o botão de compartilhar do TikTok gera.
+  private val TIKTOK_URL = Regex(
+    """https://((vm|vt)\.tiktok\.com/[\w-]+|(www\.|m\.)?tiktok\.com/(t/[\w-]+|@[\w.-]+/(video|photo)/\d+))/?(\?\S*)?""",
+    RegexOption.IGNORE_CASE,
+  )
+
   private val POST_URL = Regex("""instagram\.com/([\w.]+/)?(p|reel|reels|tv)/""", RegexOption.IGNORE_CASE)
 
-  /** Post, reel ou IGTV (o resto são stories). */
+  /** Post, reel ou IGTV do Instagram (stories e TikTok precisam da sessão do site, dentro do app). */
   fun isPost(link: String): Boolean = POST_URL.containsMatchIn(link)
 
-  /** Primeiro link de post/reel/IGTV/story no texto, se houver. */
-  fun find(text: String?): String? = text?.let { INSTAGRAM_URL.find(it)?.value }
+  /** Primeiro link de post/reel/IGTV/story ou vídeo do TikTok no texto, se houver. */
+  fun find(text: String?): String? = text?.let { (INSTAGRAM_URL.find(it) ?: TIKTOK_URL.find(it))?.value }
 
   /**
    * Abre o deep link `<scheme>:///?url=...`. Retorna false se o esquema ainda não

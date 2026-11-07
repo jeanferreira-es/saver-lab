@@ -15,11 +15,12 @@ import { cachedPost } from '@/lib/post-cache';
 import { recordPost } from '@/lib/profiles';
 import { useTheme } from '@/lib/theme';
 import { extractThreadsUrl } from '@/lib/threads-web';
+import { extractTikTokUrl } from '@/lib/tiktok-web';
 
-/** Link de post/reel/IGTV, a página de um story ou um post do Threads, se o texto tiver um. */
+/** Link de post/reel/IGTV, a página de um story ou um post do Threads ou do TikTok, se o texto tiver um. */
 function linkFrom(text: string) {
   const story = parseStoryUrl(text);
-  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null) ?? extractThreadsUrl(text);
+  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null) ?? extractThreadsUrl(text) ?? extractTikTokUrl(text);
 }
 
 export default function DownloadScreen() {
@@ -70,6 +71,15 @@ export default function DownloadScreen() {
       router.navigate({ pathname: '/threads', params: { url: threads, t: String(Date.now()) } });
       return;
     }
+    // O TikTok também: a CDN só entrega os vídeos com os cookies que a página recebeu.
+    const tiktok = extractTikTokUrl(raw);
+    if (tiktok) {
+      setInput('');
+      setClipboardUrl(null);
+      setError(null);
+      router.navigate({ pathname: '/tiktok', params: { url: tiktok, t: String(Date.now()) } });
+      return;
+    }
     // Stories só baixam com a sessão do site: abre na aba Navegar, que baixa sozinha ao carregar.
     const story = parseStoryUrl(raw);
     if (story && !extractInstagramUrl(raw)) {
@@ -81,7 +91,7 @@ export default function DownloadScreen() {
     }
     const url = extractInstagramUrl(raw);
     if (!url) {
-      setError('Cole um link do Instagram (post, reel, IGTV ou story) ou um post do Threads.');
+      setError('Cole um link do Instagram (post, reel, IGTV ou story), um post do Threads ou um vídeo do TikTok.');
       return;
     }
     setInput(url);
@@ -159,7 +169,7 @@ export default function DownloadScreen() {
         ) : null}
 
         <Card>
-          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram ou Threads</Text>
+          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram, Threads ou TikTok</Text>
           <TextInput
             value={input}
             onChangeText={setInput}
@@ -289,7 +299,7 @@ export default function DownloadScreen() {
 
         {!post && !loading ? (
           <Text style={[styles.hint, { color: t.muted }]}>
-            No Instagram ou no Threads, copie o link do post e volte para cá. Funciona com fotos, vídeos e carrosséis públicos.
+            No Instagram, no Threads ou no TikTok, copie o link do post e volte para cá. Funciona com fotos, vídeos e carrosséis públicos.
           </Text>
         ) : null}
       </ScrollView>

@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { downloadUrl, type MediaItem, type PostInfo } from './api';
 import { removeEntry, updateEntry, upsertEntry, type HistoryEntry } from './history';
 import { getSettings } from './settings';
+import { tiktokHeaders } from './tiktok-web';
 
 const ALBUM_NAME = 'Saver Lab';
 
@@ -88,7 +89,9 @@ async function downloadItem(
   const destination = new File(downloadsDir(), `${key}.${item.ext || 'mp4'}`);
   if (destination.exists) destination.delete();
 
-  const task = new DownloadTask(item.src ?? (await downloadUrl(post.url, item)), destination, {
+  const url = item.src ?? (await downloadUrl(post.url, item));
+  const task = new DownloadTask(url, destination, {
+    headers: post.kind === 'tiktok' ? await tiktokHeaders(url) : undefined,
     deferBackgroundSessionCompletion: true,
     onProgress: ({ bytesWritten, totalBytes }) => onProgress?.(bytesWritten, totalBytes > 0 ? totalBytes : null),
   });

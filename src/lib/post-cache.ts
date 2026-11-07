@@ -1,6 +1,7 @@
 import type { MediaItem, PostInfo } from './api';
 import type { CapturedPost } from './instagram-web';
 import { THREADS_HOME, threadsCode } from './threads-web';
+import { TIKTOK_HOME, tiktokId } from './tiktok-web';
 
 // O feed traz muitos posts: guarda só os mais recentes.
 const MAX = 300;
@@ -41,6 +42,21 @@ export function cachedThreadsPost(url: string | null | undefined): PostInfo | nu
   if (!post) return null;
   const link = post.username ? `${THREADS_HOME}@${post.username}/post/${post.code}` : `${THREADS_HOME}t/${post.code}`;
   return toPostInfo(post, link, `threads-${post.code}`);
+}
+
+const tiktokPosts = new Map<string, CapturedPost>();
+
+export function rememberTikTokPost(post: CapturedPost) {
+  tiktokPosts.delete(post.code);
+  tiktokPosts.set(post.code, post);
+  if (tiktokPosts.size > MAX) tiktokPosts.delete(tiktokPosts.keys().next().value!);
+}
+
+export function cachedTikTokPost(url: string | null | undefined): PostInfo | null {
+  const id = tiktokId(url);
+  const post = id ? tiktokPosts.get(id) : undefined;
+  if (!post) return null;
+  return { ...toPostInfo(post, `${TIKTOK_HOME}@${post.username}/video/${post.code}`, `tiktok-${post.code}`), kind: 'tiktok' };
 }
 
 function toPostInfo(post: CapturedPost, url: string, id: string): PostInfo {
