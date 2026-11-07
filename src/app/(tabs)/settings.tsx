@@ -1,9 +1,10 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { Alert, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Card } from '@/components/ui';
 import { bubbleAvailable, disableBubble, enableBubble, isBubbleRunning, syncBubble } from '@/lib/bubble';
-import { getSettings, saveSettings, type ThemePreference } from '@/lib/settings';
+import { getSettings, saveSettings, useSettings, type SocialNetwork, type ThemePreference } from '@/lib/settings';
 import { applyThemePreference, useTheme } from '@/lib/theme';
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
@@ -12,11 +13,23 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'dark', label: 'Escuro' },
 ];
 
+const NETWORK_OPTIONS: { value: SocialNetwork; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'instagram', label: 'Instagram', icon: 'logo-instagram' },
+  { value: 'threads', label: 'Threads', icon: 'at' },
+  { value: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
+];
+
 export default function SettingsScreen() {
   const t = useTheme();
   const [autoSave, setAutoSave] = useState(true);
   const [bubble, setBubble] = useState(isBubbleRunning);
   const [theme, setTheme] = useState<ThemePreference>('system');
+  const visibleNetworks = useSettings()?.visibleNetworks;
+
+  function toggleNetwork(network: SocialNetwork, on: boolean) {
+    if (!visibleNetworks) return;
+    saveSettings({ visibleNetworks: { ...visibleNetworks, [network]: on } });
+  }
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -77,6 +90,29 @@ export default function SettingsScreen() {
       </Card>
 
       <Card>
+        <Text style={[styles.label, { color: t.muted }]}>Abas na barra inferior</Text>
+        <Text style={{ color: t.muted, fontSize: 13, marginBottom: 8, lineHeight: 18 }}>
+          Esconder uma rede só tira a aba da barra; links dela colados em Baixar continuam funcionando.
+        </Text>
+        {NETWORK_OPTIONS.map((n, i) => (
+          <View
+            key={n.value}
+            style={[styles.switchRow, styles.networkRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border }]}
+          >
+            <Ionicons name={n.icon} size={22} color={t.text} />
+            <Text style={{ flex: 1, color: t.text, fontSize: 16, fontWeight: '600' }}>{n.label}</Text>
+            <Switch
+              value={visibleNetworks?.[n.value] ?? true}
+              disabled={!visibleNetworks}
+              trackColor={{ true: t.accent }}
+              onValueChange={(v) => toggleNetwork(n.value, v)}
+              accessibilityLabel={`Mostrar aba ${n.label}`}
+            />
+          </View>
+        ))}
+      </Card>
+
+      <Card>
         <View style={styles.switchRow}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Salvar na galeria</Text>
@@ -119,6 +155,7 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 16 },
   label: { fontSize: 13, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  networkRow: { paddingVertical: 10 },
   segmented: { flexDirection: 'row', borderWidth: 1, borderRadius: 12, padding: 4, gap: 4 },
   segment: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 9 },
   footer: { fontSize: 13, textAlign: 'center', lineHeight: 18, paddingHorizontal: 16 },
