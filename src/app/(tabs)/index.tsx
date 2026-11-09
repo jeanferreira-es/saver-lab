@@ -16,11 +16,12 @@ import { recordPost } from '@/lib/profiles';
 import { useTheme } from '@/lib/theme';
 import { extractThreadsUrl } from '@/lib/threads-web';
 import { extractTikTokUrl } from '@/lib/tiktok-web';
+import { extractTwitterUrl } from '@/lib/twitter-web';
 
-/** Link de post/reel/IGTV, a página de um story ou um post do Threads ou do TikTok, se o texto tiver um. */
+/** Link de post/reel/IGTV, a página de um story ou um post do Threads, do TikTok ou do X, se o texto tiver um. */
 function linkFrom(text: string) {
   const story = parseStoryUrl(text);
-  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null) ?? extractThreadsUrl(text) ?? extractTikTokUrl(text);
+  return extractInstagramUrl(text) ?? (story ? storyPageUrl(story) : null) ?? extractThreadsUrl(text) ?? extractTikTokUrl(text) ?? extractTwitterUrl(text);
 }
 
 export default function DownloadScreen() {
@@ -80,6 +81,15 @@ export default function DownloadScreen() {
       router.navigate({ pathname: '/tiktok', params: { url: tiktok, t: String(Date.now()) } });
       return;
     }
+    // O X também: o servidor não baixa dele, e a página já traz as URLs das mídias.
+    const twitter = extractTwitterUrl(raw);
+    if (twitter) {
+      setInput('');
+      setClipboardUrl(null);
+      setError(null);
+      router.navigate({ pathname: '/twitter', params: { url: twitter, t: String(Date.now()) } });
+      return;
+    }
     // Stories só baixam com a sessão do site: abre na aba Navegar, que baixa sozinha ao carregar.
     const story = parseStoryUrl(raw);
     if (story && !extractInstagramUrl(raw)) {
@@ -91,7 +101,7 @@ export default function DownloadScreen() {
     }
     const url = extractInstagramUrl(raw);
     if (!url) {
-      setError('Cole um link do Instagram (post, reel, IGTV ou story), um post do Threads ou um vídeo do TikTok.');
+      setError('Cole um link do Instagram (post, reel, IGTV ou story), um post do Threads, um vídeo do TikTok ou um post do X.');
       return;
     }
     setInput(url);
@@ -169,7 +179,7 @@ export default function DownloadScreen() {
         ) : null}
 
         <Card>
-          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram, Threads ou TikTok</Text>
+          <Text style={[styles.label, { color: t.muted }]}>Link do Instagram, Threads, TikTok ou X</Text>
           <TextInput
             value={input}
             onChangeText={setInput}
@@ -299,7 +309,7 @@ export default function DownloadScreen() {
 
         {!post && !loading ? (
           <Text style={[styles.hint, { color: t.muted }]}>
-            No Instagram, no Threads ou no TikTok, copie o link do post e volte para cá. Funciona com fotos, vídeos e carrosséis públicos.
+            No Instagram, no Threads, no TikTok ou no X, copie o link do post e volte para cá. Funciona com fotos, vídeos e carrosséis públicos.
           </Text>
         ) : null}
       </ScrollView>

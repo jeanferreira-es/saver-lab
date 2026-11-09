@@ -29,9 +29,9 @@ class ClipboardActivity : Activity() {
     when {
       // Post: escolha dos itens por cima do app em uso, sem trazer o Saver Lab para frente.
       link != null && AppLink.isPost(link) -> OverlayActivity.open(this, link)
-      // Story e TikTok precisam da sessão do site: abre o app.
+      // Story, Threads, TikTok e X são baixados pela página do site: abre o app.
       link != null && AppLink.open(this, link) -> Unit
-      else -> Toast.makeText(this, "Nenhum link do Instagram ou do TikTok copiado", Toast.LENGTH_SHORT).show()
+      else -> Toast.makeText(this, "Nenhum link compatível copiado", Toast.LENGTH_SHORT).show()
     }
     finish()
     overridePendingTransition(0, 0)

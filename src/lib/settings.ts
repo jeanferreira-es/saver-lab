@@ -6,7 +6,7 @@ const KEY = 'settings:v1';
 export type ThemePreference = 'system' | 'light' | 'dark';
 
 /** Redes sociais que têm aba própria na barra inferior. */
-export type SocialNetwork = 'instagram' | 'threads' | 'tiktok';
+export type SocialNetwork = 'instagram' | 'threads' | 'tiktok' | 'twitter';
 
 export type Settings = {
   /** Quais redes aparecem como aba na barra inferior. */
@@ -20,7 +20,7 @@ export type Settings = {
 };
 
 const defaults: Settings = {
-  visibleNetworks: { instagram: true, threads: true, tiktok: true },
+  visibleNetworks: { instagram: true, threads: true, tiktok: true, twitter: true },
   autoSaveToGallery: true,
   floatingBubble: false,
   theme: 'system',

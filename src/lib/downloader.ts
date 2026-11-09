@@ -6,8 +6,13 @@ import { downloadUrl, type MediaItem, type PostInfo } from './api';
 import { removeEntry, updateEntry, upsertEntry, type HistoryEntry } from './history';
 import { getSettings } from './settings';
 import { tiktokHeaders } from './tiktok-web';
+import { tweetId } from './twitter-web';
 
+// Álbuns da galeria: o X tem o seu, as demais redes dividem o outro.
 const ALBUM_NAME = 'Saver Lab';
+const TWITTER_ALBUM_NAME = 'Lab X';
+/** Itens por álbum: cheio, os próximos vão para "<nome> 01", "<nome> 02"... */
+const ALBUM_LIMIT = 500;
 
 function downloadsDir() {
   const dir = new Directory(Paths.document, 'downloads');
@@ -130,18 +135,43 @@ async function downloadItem(
   }
 }
 
-export async function saveToGallery(entry: HistoryEntry) {
+/** Nome do álbum de cada volume: o primeiro sem número, depois "<nome> 01", "<nome> 02"... */
+function volumeName(base: string, volume: number) {
+  return volume === 0 ? base : `${base} ${String(volume).padStart(2, '0')}`;
+}
+
+// Último volume em uso de cada álbum: evita contar de novo os volumes já cheios a cada item salvo.
+const currentVolume = new Map<string, number>();
+// Um item por vez: dois itens salvos juntos não podem criar o mesmo volume novo duas vezes.
+let galleryQueue: Promise<unknown> = Promise.resolve();
+
+/** Salva o item na galeria e devolve o nome do álbum onde ele ficou. */
+export function saveToGallery(entry: HistoryEntry): Promise<string> {
+  const run = galleryQueue.then(() => addToAlbum(entry));
+  galleryQueue = run.catch(() => {});
+  return run;
+}
+
+async function addToAlbum(entry: HistoryEntry): Promise<string> {
   const { granted } = await requestPermissionsAsync(true);
   if (!granted) throw new Error('Permissão da galeria negada.');
 
-  const album = await Album.get(ALBUM_NAME);
-  if (album) {
-    await Asset.create(entry.fileUri, album);
-  } else {
-    const asset = await Asset.create(entry.fileUri);
-    await Album.create(ALBUM_NAME, [asset]);
+  const base = tweetId(entry.postUrl) ? TWITTER_ALBUM_NAME : ALBUM_NAME;
+  for (let volume = currentVolume.get(base) ?? 0; ; volume++) {
+    const name = volumeName(base, volume);
+    const album = await Album.get(name);
+    if (!album) {
+      const asset = await Asset.create(entry.fileUri);
+      await Album.create(name, [asset]);
+    } else if ((await album.getAssetCount()) < ALBUM_LIMIT) {
+      await Asset.create(entry.fileUri, album);
+    } else {
+      continue;
+    }
+    currentVolume.set(base, volume);
+    await updateEntry(entry.key, { savedToGallery: true });
+    return name;
   }
-  await updateEntry(entry.key, { savedToGallery: true });
 }
 
 export async function deleteDownload(entry: HistoryEntry) {

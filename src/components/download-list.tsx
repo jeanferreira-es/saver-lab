@@ -33,8 +33,8 @@ export function DownloadList({ entries, header, emptyTitle, emptyText }: Props) 
 
   async function toGallery(entry: HistoryEntry) {
     try {
-      await saveToGallery(entry);
-      Alert.alert('Pronto', 'Salvo na galeria, no álbum "Saver Lab".');
+      const album = await saveToGallery(entry);
+      Alert.alert('Pronto', `Salvo na galeria, no álbum "${album}".`);
     } catch (e) {
       Alert.alert('Não foi possível salvar', (e as Error).message);
     }

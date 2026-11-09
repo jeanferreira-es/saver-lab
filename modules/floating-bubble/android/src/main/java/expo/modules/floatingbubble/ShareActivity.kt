@@ -20,7 +20,7 @@ class ShareActivity : Activity() {
     val link = AppLink.find(text)
 
     when {
-      link == null -> Toast.makeText(this, "Nenhum link do Instagram ou do TikTok", Toast.LENGTH_SHORT).show()
+      link == null -> Toast.makeText(this, "Nenhum link do Instagram, Threads, TikTok ou X", Toast.LENGTH_SHORT).show()
       !AppLink.open(this, link) -> Toast.makeText(this, "Abra o Saver Lab uma vez e compartilhe de novo", Toast.LENGTH_LONG).show()
     }
     finish()

@@ -59,6 +59,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="twitter"
+        options={{
+          title: 'X',
+          headerShown: false,
+          ...hiddenUnless('twitter'),
+          tabBarIcon: ({ color, size }) => <Ionicons name="logo-x" color={color as string} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="profiles"
         options={{
           title: 'Perfis',

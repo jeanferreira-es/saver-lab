@@ -17,6 +17,7 @@ const NETWORK_OPTIONS: { value: SocialNetwork; label: string; icon: keyof typeof
   { value: 'instagram', label: 'Instagram', icon: 'logo-instagram' },
   { value: 'threads', label: 'Threads', icon: 'at' },
   { value: 'tiktok', label: 'TikTok', icon: 'logo-tiktok' },
+  { value: 'twitter', label: 'X (Twitter)', icon: 'logo-x' },
 ];
 
 export default function SettingsScreen() {

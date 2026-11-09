@@ -2,6 +2,7 @@ import type { MediaItem, PostInfo } from './api';
 import type { CapturedPost } from './instagram-web';
 import { THREADS_HOME, threadsCode } from './threads-web';
 import { TIKTOK_HOME, tiktokId } from './tiktok-web';
+import { TWITTER_HOME, tweetId } from './twitter-web';
 
 // O feed traz muitos posts: guarda só os mais recentes.
 const MAX = 300;
@@ -57,6 +58,22 @@ export function cachedTikTokPost(url: string | null | undefined): PostInfo | nul
   const post = id ? tiktokPosts.get(id) : undefined;
   if (!post) return null;
   return { ...toPostInfo(post, `${TIKTOK_HOME}@${post.username}/video/${post.code}`, `tiktok-${post.code}`), kind: 'tiktok' };
+}
+
+const twitterPosts = new Map<string, CapturedPost>();
+
+export function rememberTwitterPost(post: CapturedPost) {
+  twitterPosts.delete(post.code);
+  twitterPosts.set(post.code, post);
+  if (twitterPosts.size > MAX) twitterPosts.delete(twitterPosts.keys().next().value!);
+}
+
+export function cachedTwitterPost(url: string | null | undefined): PostInfo | null {
+  const id = tweetId(url);
+  const post = id ? twitterPosts.get(id) : undefined;
+  if (!post) return null;
+  const link = post.username ? `${TWITTER_HOME}${post.username}/status/${post.code}` : `${TWITTER_HOME}i/status/${post.code}`;
+  return toPostInfo(post, link, `twitter-${post.code}`);
 }
 
 function toPostInfo(post: CapturedPost, url: string, id: string): PostInfo {
